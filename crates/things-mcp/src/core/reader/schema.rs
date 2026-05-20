@@ -30,11 +30,17 @@ const REQUIRED: &[(&str, &[&str])] = &[
             "deadline",
             "stopDate",
             "rt1_recurrenceRule",
+            "todayIndex",
+            "index",
         ],
     ),
-    ("TMArea", &["uuid", "title"]),
-    ("TMTag", &["uuid", "title", "shortcut", "parent"]),
+    ("TMArea", &["uuid", "title", "index"]),
+    ("TMTag", &["uuid", "title", "shortcut", "parent", "index"]),
     ("TMTaskTag", &["tasks", "tags"]),
+    (
+        "TMChecklistItem",
+        &["uuid", "title", "status", "task", "index"],
+    ),
 ];
 
 pub fn probe(db_path: &Path) -> Result<(), ThingsError> {
