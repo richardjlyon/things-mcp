@@ -195,6 +195,55 @@ pub async fn list_upcoming(
     attach_tags(pool, rows).await
 }
 
+pub struct ListAnytimeParams {
+    pub area_id: Option<String>,
+    pub limit: u32,
+}
+
+impl Default for ListAnytimeParams {
+    fn default() -> Self {
+        Self {
+            area_id: None,
+            limit: 200,
+        }
+    }
+}
+
+pub async fn list_anytime(
+    pool: &ReaderPool,
+    params: ListAnytimeParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        LEFT JOIN TMTask AS p
+               ON p.uuid = t.project AND p.type = 1
+        WHERE t.trashed = 0
+          AND t.type = 0
+          AND t.status = 0
+          AND t.start = 1
+          AND (t.startDate IS NULL OR t.startDate = 0)
+          AND (?1 IS NULL OR t.area = ?1 OR p.area = ?1)
+        ORDER BY t.userModificationDate DESC
+        LIMIT ?2
+        "#,
+    );
+    let limit = params.limit as i64;
+    let area = params.area_id;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map(
+                rusqlite::params![area, limit],
+                row_to_summary,
+            )?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 /// Helper used by every list query that returns `TodoSummary` rows.
 async fn attach_tags(
     pool: &ReaderPool,
@@ -327,6 +376,45 @@ mod tests {
         // Today-scheduled and never-scheduled items must NOT be in Upcoming.
         assert!(!titles.contains(&"Today scheduled item"));
         assert!(!titles.contains(&"Read RFC 9457"));
+    }
+
+    #[tokio::test]
+    async fn list_anytime_returns_unscheduled_anytime_items() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_anytime(&pool, ListAnytimeParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Read RFC 9457"));
+        // Has a deadline but no scheduled date → still anytime.
+        assert!(titles.contains(&"Upcoming deadlined item"));
+        // Future-scheduled item is NOT anytime.
+        assert!(!titles.contains(&"Upcoming scheduled item"));
+        // Today-scheduled item is NOT anytime.
+        assert!(!titles.contains(&"Today scheduled item"));
+    }
+
+    #[tokio::test]
+    async fn list_anytime_area_filter() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_anytime(
+            &pool,
+            ListAnytimeParams {
+                area_id: Some("area-1".to_string()),
+                limit: 200,
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        // proj-1 is in area-1, so todo-4 inside proj-1 should be picked up via the project join.
+        assert!(titles.contains(&"Read RFC 9457"));
+        // todo-upcoming-dl has area=area-1 directly.
+        assert!(titles.contains(&"Upcoming deadlined item"));
     }
 
     #[tokio::test]

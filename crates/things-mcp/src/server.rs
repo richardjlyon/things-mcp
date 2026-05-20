@@ -9,8 +9,8 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerH
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 use crate::tools::lists::{
-    things_list_inbox, things_list_today, things_list_upcoming,
-    ListInboxArgs, ListTodayArgs, ListUpcomingArgs,
+    things_list_anytime, things_list_inbox, things_list_today, things_list_upcoming,
+    ListAnytimeArgs, ListInboxArgs, ListTodayArgs, ListUpcomingArgs,
 };
 
 #[derive(Clone)]
@@ -80,6 +80,26 @@ impl ThingsServer {
         Parameters(args): Parameters<ListUpcomingArgs>,
     ) -> Result<Json<Vec<TodoSummary>>, McpError> {
         let rows = things_list_upcoming(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_list_anytime",
+        description = "Return Anytime to-dos (start=Anytime, no scheduled date). Optionally filter by area. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_list_anytime(
+        &self,
+        Parameters(args): Parameters<ListAnytimeArgs>,
+    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+        let rows = things_list_anytime(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))

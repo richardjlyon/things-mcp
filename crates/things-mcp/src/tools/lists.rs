@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::reader::queries::{list_inbox, list_today, ListInboxParams, ListTodayParams};
 use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
+use crate::core::reader::queries::{list_anytime, ListAnytimeParams};
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
@@ -71,5 +72,27 @@ pub async fn things_list_upcoming(
         limit: args.limit.unwrap_or(200),
     };
     let rows = list_upcoming(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListAnytimeArgs {
+    /// Restrict to to-dos belonging to a specific area (directly or via project). Optional.
+    #[serde(default)]
+    pub area_id: Option<String>,
+    /// Cap on returned rows. Defaults to 200.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_anytime(
+    state: AppState,
+    args: ListAnytimeArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListAnytimeParams {
+        area_id: args.area_id,
+        limit: args.limit.unwrap_or(200),
+    };
+    let rows = list_anytime(&state.pool, params).await?;
     Ok(rows)
 }
