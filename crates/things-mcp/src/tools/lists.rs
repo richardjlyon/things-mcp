@@ -8,6 +8,7 @@ use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
 use crate::core::reader::queries::{list_anytime, ListAnytimeParams};
 use crate::core::reader::queries::{list_someday, ListSomedayParams};
 use crate::core::reader::queries::{list_logbook, ListLogbookParams};
+use crate::core::reader::queries::{list_trash, ListTrashParams};
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
@@ -140,5 +141,23 @@ pub async fn things_list_logbook(
         limit: args.limit.unwrap_or(100),
     };
     let rows = list_logbook(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListTrashArgs {
+    /// Cap on returned rows. Defaults to 100.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_trash(
+    state: AppState,
+    args: ListTrashArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListTrashParams {
+        limit: args.limit.unwrap_or(100),
+    };
+    let rows = list_trash(&state.pool, params).await?;
     Ok(rows)
 }

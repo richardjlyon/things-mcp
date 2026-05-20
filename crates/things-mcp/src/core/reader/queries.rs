@@ -353,6 +353,41 @@ pub async fn list_logbook(
     attach_tags(pool, rows).await
 }
 
+pub struct ListTrashParams {
+    pub limit: u32,
+}
+
+impl Default for ListTrashParams {
+    fn default() -> Self {
+        Self { limit: 100 }
+    }
+}
+
+pub async fn list_trash(
+    pool: &ReaderPool,
+    params: ListTrashParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        WHERE t.trashed = 1
+          AND t.type = 0
+        ORDER BY t.userModificationDate DESC
+        LIMIT ?1
+        "#,
+    );
+    let limit = params.limit as i64;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map([limit], row_to_summary)?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 /// Helper used by every list query that returns `TodoSummary` rows.
 async fn attach_tags(
     pool: &ReaderPool,
@@ -575,6 +610,18 @@ mod tests {
         let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
         assert!(titles.contains(&"Old canceled"));
         assert!(!titles.contains(&"Old completed"));
+    }
+
+    #[tokio::test]
+    async fn list_trash_returns_trashed_items() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_trash(&pool, ListTrashParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(rows.len(), 1);
+        assert!(titles.contains(&"Trashed thing"));
     }
 
     #[tokio::test]

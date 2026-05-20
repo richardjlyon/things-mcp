@@ -10,8 +10,9 @@ use crate::core::types::TodoSummary;
 use crate::state::AppState;
 use crate::tools::lists::{
     things_list_anytime, things_list_inbox, things_list_logbook, things_list_someday,
-    things_list_today, things_list_upcoming, ListAnytimeArgs, ListInboxArgs,
-    ListLogbookArgs, ListSomedayArgs, ListTodayArgs, ListUpcomingArgs,
+    things_list_today, things_list_trash, things_list_upcoming, ListAnytimeArgs,
+    ListInboxArgs, ListLogbookArgs, ListSomedayArgs, ListTodayArgs, ListTrashArgs,
+    ListUpcomingArgs,
 };
 
 #[derive(Clone)]
@@ -141,6 +142,26 @@ impl ThingsServer {
         Parameters(args): Parameters<ListLogbookArgs>,
     ) -> Result<Json<Vec<TodoSummary>>, McpError> {
         let rows = things_list_logbook(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_list_trash",
+        description = "Return trashed to-dos, newest first. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_list_trash(
+        &self,
+        Parameters(args): Parameters<ListTrashArgs>,
+    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+        let rows = things_list_trash(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))
