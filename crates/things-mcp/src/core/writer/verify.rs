@@ -10,12 +10,17 @@ use rusqlite::Connection;
 
 use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
-use crate::core::types::{TaskStatus, TodoSummary};
+use crate::core::types::{TaskKind, TaskStatus, TodoSummary};
 
 #[derive(Debug, Clone)]
 pub enum VerifyPredicate {
     /// A row with this title and creationDate ≥ since_unix should exist.
-    CreateByTitle { title: String, since_unix: f64 },
+    /// `kind` selects the row's `type` column: Todo → 0, Project → 1.
+    CreateByTitle {
+        title: String,
+        since_unix: f64,
+        kind: TaskKind,
+    },
     /// The row at this id should match all populated expected_* fields.
     UpdateById {
         id: String,
@@ -86,13 +91,18 @@ pub async fn verify(
 fn check_once(c: &Connection, pred: &VerifyPredicate) -> rusqlite::Result<Option<TodoSummary>> {
     use crate::core::reader::queries::{row_to_summary, SUMMARY_COLS, SUMMARY_COLS_LEN};
     match pred {
-        VerifyPredicate::CreateByTitle { title, since_unix } => {
+        VerifyPredicate::CreateByTitle { title, since_unix, kind } => {
+            let type_int: i64 = match kind {
+                TaskKind::Todo => 0,
+                TaskKind::Project => 1,
+                TaskKind::Heading => 2,
+            };
             let sql = format!(
                 r#"
                 SELECT {SUMMARY_COLS}
                 FROM TMTask AS t
                 WHERE t.trashed = 0
-                  AND t.type = 0
+                  AND t.type = ?
                   AND t.title = ?
                   AND t.creationDate >= ?
                 ORDER BY t.creationDate DESC
@@ -100,7 +110,7 @@ fn check_once(c: &Connection, pred: &VerifyPredicate) -> rusqlite::Result<Option
                 "#
             );
             let mut stmt = c.prepare_cached(&sql)?;
-            let mut rows = stmt.query(rusqlite::params![title, since_unix])?;
+            let mut rows = stmt.query(rusqlite::params![type_int, title, since_unix])?;
             if let Some(r) = rows.next()? {
                 return row_to_summary(r).map(Some);
             }
@@ -190,6 +200,7 @@ mod tests {
             VerifyPredicate::CreateByTitle {
                 title: "Buy milk".into(),
                 since_unix: 0.0,
+                kind: TaskKind::Todo,
             },
             timeout,
             interval,
@@ -211,6 +222,7 @@ mod tests {
             VerifyPredicate::CreateByTitle {
                 title: "Nothing in the fixture matches this".into(),
                 since_unix: 0.0,
+                kind: TaskKind::Todo,
             },
             timeout,
             interval,

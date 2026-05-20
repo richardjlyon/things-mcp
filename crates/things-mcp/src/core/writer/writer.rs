@@ -154,9 +154,11 @@ mod tests {
     }
 
     fn pred(title: &str) -> VerifyPredicate {
+        use crate::core::types::TaskKind;
         VerifyPredicate::CreateByTitle {
             title: title.into(),
             since_unix: 0.0,
+            kind: TaskKind::Todo,
         }
     }
 

@@ -83,6 +83,7 @@ pub async fn things_add_todo(
     let predicate = VerifyPredicate::CreateByTitle {
         title: args.title,
         since_unix,
+        kind: crate::core::types::TaskKind::Todo,
     };
     let outcome = state.writer.fire(op, predicate).await?;
     Ok(outcome)
