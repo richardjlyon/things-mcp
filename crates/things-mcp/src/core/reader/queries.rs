@@ -862,6 +862,173 @@ fn unix_to_iso(secs: f64) -> String {
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{sec:02}Z")
 }
 
+/// Filter inputs to `search`. Each Option / Vec field is OFF when empty/None,
+/// matching the spec's "all filters are optional" contract.
+#[derive(Default)]
+pub struct SearchParams {
+    /// Free-text query (LIKE-matched against `title` and `notes`). Optional.
+    pub query: Option<String>,
+    /// Tag titles or UUIDs. OR-semantic — an item with any listed tag matches.
+    pub tags: Vec<String>,
+    pub area_id: Option<String>,
+    pub project_id: Option<String>,
+    pub status: ProjectStatusFilter,
+    /// ISO `YYYY-MM-DD`. Inclusive upper bound on `deadline`.
+    pub due_before: Option<String>,
+    /// ISO `YYYY-MM-DD`. Inclusive lower bound on `deadline`.
+    pub due_after: Option<String>,
+    /// ISO `YYYY-MM-DD`. Inclusive upper bound on `startDate`.
+    pub scheduled_before: Option<String>,
+    /// ISO `YYYY-MM-DD`. Inclusive lower bound on `startDate`.
+    pub scheduled_after: Option<String>,
+    /// Cap on returned rows. Caller supplies; 0 is internally rewritten to i64::MAX
+    /// so default-constructed unit tests behave; the MCP-layer adapter always
+    /// supplies a real limit (default 50 at the tool boundary).
+    pub limit: u32,
+}
+
+pub async fn search(
+    pool: &ReaderPool,
+    params: SearchParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    use crate::core::reader::dates::{pack_things_date, parse_iso_date};
+    use rusqlite::types::Value;
+
+    let mut clauses: Vec<String> = Vec::new();
+    let mut binds: Vec<Value> = Vec::new();
+
+    let effective_limit: i64 = if params.limit == 0 {
+        i64::MAX
+    } else {
+        params.limit as i64
+    };
+
+    // Status filter — default Open. ProjectStatusFilter is reused (Plan 2)
+    // because the enum values map cleanly: Open=0, Done=2|3, All=no filter.
+    match params.status {
+        ProjectStatusFilter::Open => clauses.push("t.status = 0".to_string()),
+        ProjectStatusFilter::Done => clauses.push("t.status IN (2, 3)".to_string()),
+        ProjectStatusFilter::All => {}
+    }
+
+    // Text filter — LIKE on title + notes.
+    if let Some(q) = params.query.as_ref().filter(|s| !s.is_empty()) {
+        let pat = format!("%{}%", q);
+        clauses.push("(t.title LIKE ? OR t.notes LIKE ?)".to_string());
+        binds.push(Value::Text(pat.clone()));
+        binds.push(Value::Text(pat));
+    }
+
+    // Tag filter — OR-semantic. Inlined EXISTS so the main row scan stays simple.
+    if !params.tags.is_empty() {
+        let tag_placeholders = (0..params.tags.len() * 2)
+            .map(|i| if i % 2 == 0 { "g.title = ?" } else { "g.uuid = ?" })
+            .collect::<Vec<_>>()
+            .chunks(2)
+            .map(|pair| format!("({} OR {})", pair[0], pair[1]))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        clauses.push(format!(
+            "EXISTS (SELECT 1 FROM TMTaskTag tt \
+              JOIN TMTag g ON g.uuid = tt.tags \
+              WHERE tt.tasks = t.uuid AND ({tag_placeholders}))"
+        ));
+        for tag in &params.tags {
+            binds.push(Value::Text(tag.clone()));
+            binds.push(Value::Text(tag.clone()));
+        }
+    }
+
+    // Area filter — direct OR via project.
+    if let Some(area) = params.area_id.as_ref() {
+        clauses.push("(t.area = ? OR p.area = ?)".to_string());
+        binds.push(Value::Text(area.clone()));
+        binds.push(Value::Text(area.clone()));
+    }
+
+    // Project filter.
+    if let Some(project) = params.project_id.as_ref() {
+        clauses.push("t.project = ?".to_string());
+        binds.push(Value::Text(project.clone()));
+    }
+
+    // Deadline range — packed-int comparison.
+    if let Some(iso) = params.due_after.as_ref() {
+        let packed = parse_iso_date(iso)
+            .map(|(y, m, d)| pack_things_date(y, m, d))
+            .ok_or_else(|| ThingsError::InvalidInput {
+                field: "due_after".into(),
+                reason: format!("expected YYYY-MM-DD, got {iso:?}"),
+            })?;
+        clauses.push("(t.deadline > 0 AND t.deadline >= ?)".to_string());
+        binds.push(Value::Integer(packed));
+    }
+    if let Some(iso) = params.due_before.as_ref() {
+        let packed = parse_iso_date(iso)
+            .map(|(y, m, d)| pack_things_date(y, m, d))
+            .ok_or_else(|| ThingsError::InvalidInput {
+                field: "due_before".into(),
+                reason: format!("expected YYYY-MM-DD, got {iso:?}"),
+            })?;
+        clauses.push("(t.deadline > 0 AND t.deadline <= ?)".to_string());
+        binds.push(Value::Integer(packed));
+    }
+
+    // Scheduled range — packed-int comparison.
+    if let Some(iso) = params.scheduled_after.as_ref() {
+        let packed = parse_iso_date(iso)
+            .map(|(y, m, d)| pack_things_date(y, m, d))
+            .ok_or_else(|| ThingsError::InvalidInput {
+                field: "scheduled_after".into(),
+                reason: format!("expected YYYY-MM-DD, got {iso:?}"),
+            })?;
+        clauses.push("(t.startDate > 0 AND t.startDate >= ?)".to_string());
+        binds.push(Value::Integer(packed));
+    }
+    if let Some(iso) = params.scheduled_before.as_ref() {
+        let packed = parse_iso_date(iso)
+            .map(|(y, m, d)| pack_things_date(y, m, d))
+            .ok_or_else(|| ThingsError::InvalidInput {
+                field: "scheduled_before".into(),
+                reason: format!("expected YYYY-MM-DD, got {iso:?}"),
+            })?;
+        clauses.push("(t.startDate > 0 AND t.startDate <= ?)".to_string());
+        binds.push(Value::Integer(packed));
+    }
+
+    let extra = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!(" AND {}", clauses.join(" AND "))
+    };
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        LEFT JOIN TMTask AS p
+               ON p.uuid = t.project AND p.type = 1
+        WHERE t.trashed = 0
+          AND t.type = 0
+          {extra}
+        ORDER BY t.creationDate DESC
+        LIMIT ?
+        "#,
+    );
+    binds.push(Value::Integer(effective_limit));
+
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map(
+                rusqlite::params_from_iter(binds.iter()),
+                row_to_summary,
+            )?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1260,5 +1427,196 @@ mod tests {
         .unwrap();
         let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(titles, vec!["Read research papers"]);
+    }
+
+    #[tokio::test]
+    async fn search_text_only_matches_title_and_notes() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                query: Some("milk".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Buy milk"));
+        // Status defaults to Open; the completed inbox row is excluded.
+        assert!(!titles.contains(&"Pay tax bill"));
+    }
+
+    #[tokio::test]
+    async fn search_text_search_matches_notes_too() {
+        // The fixture's proj-1 has notes "Track what to read next" — projects
+        // are not in scope for to-do search (type=0), so the text match
+        // should NOT pick them up.
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                query: Some("Track what to read".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert!(rows.is_empty(), "projects must not appear in to-do search");
+    }
+
+    #[tokio::test]
+    async fn search_tag_filter_or_semantics() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                tags: vec!["Errand".to_string(), "Deep work".to_string()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        // todo-2 carries 'Errand'; todo-someday carries 'Deep work'.
+        assert!(titles.contains(&"Call the dentist"));
+        assert!(titles.contains(&"Read research papers"));
+    }
+
+    #[tokio::test]
+    async fn search_area_filter_includes_project_indirection() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                area_id: Some("area-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        // todo-4 sits under proj-1 (area-1) — picked up via project indirection.
+        assert!(titles.contains(&"Read RFC 9457"));
+        // todo-upcoming-dl has area=area-1 directly.
+        assert!(titles.contains(&"Upcoming deadlined item"));
+    }
+
+    #[tokio::test]
+    async fn search_project_filter() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                project_id: Some("proj-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Read RFC 9457"));
+        // todo-today is also in proj-1 (status=Open).
+        assert!(titles.contains(&"Today scheduled item"));
+    }
+
+    #[tokio::test]
+    async fn search_status_done_includes_logbook() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                status: ProjectStatusFilter::Done,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Old completed"));
+        assert!(titles.contains(&"Old canceled"));
+        assert!(titles.contains(&"Pay tax bill"));
+    }
+
+    #[tokio::test]
+    async fn search_deadline_range_filter() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                due_after: Some("2050-01-01".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, vec!["Upcoming deadlined item"]);
+    }
+
+    #[tokio::test]
+    async fn search_scheduled_range_filter() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                scheduled_before: Some("2050-01-01".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        // Scheduled to 2020-01-01 — well before 2050-01-01.
+        assert!(titles.contains(&"Today scheduled item"));
+        // Scheduled to 2099-12-31 — after the upper bound.
+        assert!(!titles.contains(&"Upcoming scheduled item"));
+    }
+
+    #[tokio::test]
+    async fn search_combined_filters_intersect() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = search(
+            &pool,
+            SearchParams {
+                query: Some("Read".to_string()),
+                area_id: Some("area-1".to_string()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        // Both text-match ("Read") and area-1 match.
+        assert!(titles.contains(&"Read RFC 9457"));
+        // "Read research papers" is in area-2 — excluded by area filter.
+        assert!(!titles.contains(&"Read research papers"));
     }
 }
