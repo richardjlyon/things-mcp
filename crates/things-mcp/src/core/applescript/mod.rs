@@ -10,3 +10,4 @@
 //! the safety gate and result composition.
 
 pub mod driver;
+pub mod script;
