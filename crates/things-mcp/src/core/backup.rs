@@ -58,15 +58,13 @@ fn utc_stamp() -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let (y, mo, d, h, mi, s) = __test_only_unix_to_ymdhms(secs as i64);
+    let (y, mo, d, h, mi, s) = unix_to_ymdhms(secs as i64);
     format!("{y:04}{mo:02}{d:02}-{h:02}{mi:02}{s:02}")
 }
 
 /// Decompose Unix epoch seconds into (year, month, day, hour, minute, second).
 /// Pure UTC. Year ≥ 1970 assumed; negatives are clamped to 0 (i.e. 1970-01-01).
-/// Exposed via this name so other modules can render ISO-8601 timestamps
-/// without pulling in `chrono`.
-pub(crate) fn __test_only_unix_to_ymdhms(unix_secs: i64) -> (i32, u32, u32, u32, u32, u32) {
+pub(crate) fn unix_to_ymdhms(unix_secs: i64) -> (i32, u32, u32, u32, u32, u32) {
     let unix_secs = unix_secs.max(0) as u64;
     let secs = unix_secs as i64;
     let s = secs.rem_euclid(60) as u32;

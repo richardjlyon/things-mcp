@@ -4,9 +4,9 @@
 //! integers:
 //!
 //! ```text
-//!   bit  26                              0
-//!        YYYYYYYYYYY MMMM DDDDD 0000000
-//!        ↑ 11 bits   ↑ 4   ↑ 5   ↑ 7 bits padding
+//!   bit  27                              0
+//!        YYYYYYYYYYYY MMMM DDDDD 0000000
+//!        ↑ 12 bits    ↑ 4   ↑ 5   ↑ 7 bits padding
 //! ```
 //!
 //! `0` means "no date" (Things never writes `1970-00-00`). Things stores
@@ -58,7 +58,7 @@ pub fn parse_iso_date(iso: &str) -> Option<(i32, u32, u32)> {
 }
 
 /// `(year, month, day)` → Unix epoch seconds (00:00 UTC of that date).
-/// Inverse of `core::backup::__test_only_unix_to_ymdhms` rounded to whole
+/// Inverse of `core::backup::unix_to_ymdhms` rounded to whole
 /// days. Used by `things_list_logbook`'s `from`/`to` filters which compare
 /// against `stopDate` (REAL Unix seconds).
 pub fn ymd_to_unix_utc(year: i32, month: u32, day: u32) -> i64 {
@@ -104,7 +104,7 @@ pub fn today_packed_utc() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let (y, m, d, _, _, _) = crate::core::backup::__test_only_unix_to_ymdhms(secs);
+    let (y, m, d, _, _, _) = crate::core::backup::unix_to_ymdhms(secs);
     pack_things_date(y, m, d)
 }
 

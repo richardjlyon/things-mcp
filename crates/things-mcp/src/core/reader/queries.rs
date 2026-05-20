@@ -121,7 +121,7 @@ async fn fetch_tags_for_tasks(
 fn unix_to_iso(secs: f64) -> String {
     // Minimal ISO-8601 emitter so we don't pull in `chrono` for one helper.
     let s = secs as i64;
-    let (y, mo, d, h, mi, sec) = crate::core::backup::__test_only_unix_to_ymdhms(s);
+    let (y, mo, d, h, mi, sec) = crate::core::backup::unix_to_ymdhms(s);
     format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{sec:02}Z")
 }
 
