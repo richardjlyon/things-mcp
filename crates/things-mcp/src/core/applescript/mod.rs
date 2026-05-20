@@ -9,5 +9,9 @@
 //! in `script.rs`, and a facade (`TagAdmin`) in `admin.rs` that owns
 //! the safety gate and result composition.
 
+pub mod admin;
 pub mod driver;
 pub mod script;
+
+pub use admin::{TagAdmin, TagOutcome};
+pub use driver::{AppleScriptDriver, OsascriptDriver, RecordingAppleScript};
