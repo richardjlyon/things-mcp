@@ -173,3 +173,47 @@ pub async fn things_list_areas(
     let rows = list_areas(&state.pool).await?;
     Ok(rows)
 }
+
+use crate::core::reader::queries::{list_projects, ListProjectsParams, ProjectStatusFilter};
+use crate::core::types::Project;
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ProjectStatusArg {
+    #[default]
+    Open,
+    Done,
+    All,
+}
+
+impl From<ProjectStatusArg> for ProjectStatusFilter {
+    fn from(a: ProjectStatusArg) -> Self {
+        match a {
+            ProjectStatusArg::Open => Self::Open,
+            ProjectStatusArg::Done => Self::Done,
+            ProjectStatusArg::All => Self::All,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListProjectsArgs {
+    /// Restrict to projects in a given area. Optional.
+    #[serde(default)]
+    pub area_id: Option<String>,
+    /// `open` (default), `done`, or `all`.
+    #[serde(default)]
+    pub status: Option<ProjectStatusArg>,
+}
+
+pub async fn things_list_projects(
+    state: AppState,
+    args: ListProjectsArgs,
+) -> anyhow::Result<Vec<Project>> {
+    let params = ListProjectsParams {
+        area_id: args.area_id,
+        status: args.status.unwrap_or_default().into(),
+    };
+    let rows = list_projects(&state.pool, params).await?;
+    Ok(rows)
+}

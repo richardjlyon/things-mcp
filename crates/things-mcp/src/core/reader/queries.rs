@@ -7,7 +7,7 @@
 
 use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
-use crate::core::types::{Area, StartBucket, TaskStatus, TodoSummary};
+use crate::core::types::{Area, Project, StartBucket, TaskStatus, TodoSummary};
 
 /// Standard `TodoSummary`-shaped column projection used by every list query.
 /// SQL must `SELECT` columns in this exact order:
@@ -438,6 +438,73 @@ async fn fetch_tags_for_tasks(
     Ok(out)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProjectStatusFilter {
+    Open,
+    Done,
+    All,
+}
+
+impl Default for ProjectStatusFilter {
+    fn default() -> Self {
+        Self::Open
+    }
+}
+
+#[derive(Default)]
+pub struct ListProjectsParams {
+    pub area_id: Option<String>,
+    pub status: ProjectStatusFilter,
+}
+
+pub async fn list_projects(
+    pool: &ReaderPool,
+    params: ListProjectsParams,
+) -> Result<Vec<Project>, ThingsError> {
+    let status_clause = match params.status {
+        ProjectStatusFilter::Open => " AND t.status = 0",
+        ProjectStatusFilter::Done => " AND t.status IN (2, 3)",
+        ProjectStatusFilter::All => "",
+    };
+    let sql = format!(
+        r#"
+        SELECT t.uuid, t.title, t.area, t.status, t.notes
+        FROM TMTask AS t
+        WHERE t.trashed = 0
+          AND t.type = 1
+          AND (?1 IS NULL OR t.area = ?1)
+          {status_clause}
+        ORDER BY t.userModificationDate DESC
+        "#,
+    );
+    let area = params.area_id;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<Project>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map(rusqlite::params![area], |r| {
+                Ok(Project {
+                    id: r.get::<_, String>(0)?,
+                    title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    area_id: r.get::<_, Option<String>>(2)?,
+                    status: TaskStatus::from_sqlite(r.get::<_, i64>(3)?),
+                    notes: r.get::<_, Option<String>>(4)?,
+                    tags: Vec::new(),
+                })
+            })?;
+            iter.collect()
+        })
+        .await?;
+    let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+    let tag_map = fetch_tags_for_tasks(pool, ids).await?;
+    let mut with_tags = rows;
+    for row in with_tags.iter_mut() {
+        if let Some(v) = tag_map.get(&row.id) {
+            row.tags = v.clone();
+        }
+    }
+    Ok(with_tags)
+}
+
 pub async fn list_areas(pool: &ReaderPool) -> Result<Vec<Area>, ThingsError> {
     let sql = r#"
         SELECT a.uuid, a.title
@@ -677,5 +744,56 @@ mod tests {
         .await
         .unwrap();
         assert!(rows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn list_projects_default_returns_open_only() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_projects(&pool, ListProjectsParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Reading list"));
+        assert!(!titles.contains(&"Shipped Q1"));
+    }
+
+    #[tokio::test]
+    async fn list_projects_status_done_returns_completed_only() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_projects(
+            &pool,
+            ListProjectsParams {
+                area_id: None,
+                status: ProjectStatusFilter::Done,
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, vec!["Shipped Q1"]);
+    }
+
+    #[tokio::test]
+    async fn list_projects_area_filter_and_tag_attachment() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_projects(
+            &pool,
+            ListProjectsParams {
+                area_id: Some("area-1".to_string()),
+                status: ProjectStatusFilter::All,
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "Reading list");
+        assert_eq!(rows[0].tags, vec!["Errand".to_string()]);
     }
 }
