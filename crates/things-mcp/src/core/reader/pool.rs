@@ -31,6 +31,14 @@ pub struct ReaderPool {
     inner: Arc<Inner>,
 }
 
+impl std::fmt::Debug for ReaderPool {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ReaderPool")
+            .field("path", &self.inner.path)
+            .finish_non_exhaustive()
+    }
+}
+
 struct Inner {
     path: PathBuf,
     sem: Semaphore,
