@@ -7,7 +7,7 @@
 
 use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
-use crate::core::types::{StartBucket, TaskStatus, TodoSummary};
+use crate::core::types::{Area, StartBucket, TaskStatus, TodoSummary};
 
 /// Standard `TodoSummary`-shaped column projection used by every list query.
 /// SQL must `SELECT` columns in this exact order:
@@ -438,6 +438,27 @@ async fn fetch_tags_for_tasks(
     Ok(out)
 }
 
+pub async fn list_areas(pool: &ReaderPool) -> Result<Vec<Area>, ThingsError> {
+    let sql = r#"
+        SELECT a.uuid, a.title
+        FROM TMArea AS a
+        ORDER BY a."index", a.title
+    "#;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<Area>> {
+            let mut stmt = c.prepare_cached(sql)?;
+            let iter = stmt.query_map([], |r| {
+                Ok(Area {
+                    id: r.get::<_, String>(0)?,
+                    title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                })
+            })?;
+            iter.collect()
+        })
+        .await?;
+    Ok(rows)
+}
+
 fn unix_to_iso(secs: f64) -> String {
     // Minimal ISO-8601 emitter so we don't pull in `chrono` for one helper.
     let s = secs as i64;
@@ -622,6 +643,19 @@ mod tests {
         let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(rows.len(), 1);
         assert!(titles.contains(&"Trashed thing"));
+    }
+
+    #[tokio::test]
+    async fn list_areas_returns_areas_in_index_order() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_areas(&pool).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, vec!["Personal", "Work"]);
+        assert_eq!(rows[0].id, "area-1");
+        assert_eq!(rows[1].id, "area-2");
     }
 
     #[tokio::test]

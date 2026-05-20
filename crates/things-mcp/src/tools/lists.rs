@@ -3,7 +3,8 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::reader::queries::{list_inbox, list_today, ListInboxParams, ListTodayParams};
+use crate::core::reader::queries::{list_areas, list_inbox, list_today, ListInboxParams, ListTodayParams};
+use crate::core::types::Area;
 use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
 use crate::core::reader::queries::{list_anytime, ListAnytimeParams};
 use crate::core::reader::queries::{list_someday, ListSomedayParams};
@@ -159,5 +160,16 @@ pub async fn things_list_trash(
         limit: args.limit.unwrap_or(100),
     };
     let rows = list_trash(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListAreasArgs {}
+
+pub async fn things_list_areas(
+    state: AppState,
+    _args: ListAreasArgs,
+) -> anyhow::Result<Vec<Area>> {
+    let rows = list_areas(&state.pool).await?;
     Ok(rows)
 }
