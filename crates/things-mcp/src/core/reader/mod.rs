@@ -2,4 +2,5 @@
 
 pub mod fixture;
 pub mod pool;
+pub mod queries;
 pub mod schema;
