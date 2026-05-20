@@ -6,3 +6,4 @@ pub mod fts;
 pub mod pool;
 pub mod queries;
 pub mod schema;
+pub mod tags;

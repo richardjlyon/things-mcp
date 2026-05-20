@@ -447,6 +447,17 @@ async fn fetch_tags_for_tasks(
     Ok(out)
 }
 
+/// Public helper for the assign/unassign tools: returns the current tag
+/// titles attached to a single to-do (or empty if none). Wraps the
+/// per-task fetch so callers don't have to deal with the HashMap shape.
+pub async fn get_tags_for_task(
+    pool: &ReaderPool,
+    id: String,
+) -> Result<Vec<String>, ThingsError> {
+    let tag_map = fetch_tags_for_tasks(pool, vec![id.clone()]).await?;
+    Ok(tag_map.get(&id).cloned().unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectStatusFilter {
     Open,
@@ -1624,5 +1635,27 @@ mod tests {
         assert!(titles.contains(&"Read RFC 9457"));
         // "Read research papers" is in area-2 — excluded by area filter.
         assert!(!titles.contains(&"Read research papers"));
+    }
+
+    #[tokio::test]
+    async fn get_tags_for_task_returns_tag_titles_for_tagged_todo() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        // todo-2 is tagged 'Errand' in the fixture.
+        let tags = get_tags_for_task(&pool, "todo-2".into()).await.unwrap();
+        assert_eq!(tags, vec!["Errand".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn get_tags_for_task_returns_empty_for_untagged_todo() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        // todo-1 ('Buy milk') has no tags.
+        let tags = get_tags_for_task(&pool, "todo-1".into()).await.unwrap();
+        assert!(tags.is_empty());
     }
 }
