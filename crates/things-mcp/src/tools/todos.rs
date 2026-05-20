@@ -88,3 +88,136 @@ pub async fn things_add_todo(
     let outcome = state.writer.fire(op, Some(predicate)).await?;
     Ok(outcome)
 }
+
+use crate::core::writer::operation::{MoveTodoSpec, UpdateTodoSpec};
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct UpdateTodoArgs {
+    pub id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub when: Option<String>,
+    #[serde(default)]
+    pub deadline: Option<String>,
+    /// `None` = leave tags unchanged. `Some(vec![])` = clear all tags.
+    #[serde(default)]
+    pub tags: Option<Vec<String>>,
+    #[serde(default)]
+    pub list_id: Option<String>,
+    #[serde(default)]
+    pub completed: Option<bool>,
+    #[serde(default)]
+    pub canceled: Option<bool>,
+}
+
+pub async fn things_update_todo(
+    state: AppState,
+    args: UpdateTodoArgs,
+) -> anyhow::Result<WriteOutcome> {
+    if args.id.trim().is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "id".into(),
+            reason: "id must be non-empty".into(),
+        }
+        .into());
+    }
+    let op = Operation::UpdateTodo(UpdateTodoSpec {
+        id: args.id.clone(),
+        title: args.title.clone(),
+        notes: args.notes.clone(),
+        when: args.when,
+        deadline: args.deadline,
+        tags: args.tags,
+        list_id: args.list_id,
+        completed: args.completed,
+        canceled: args.canceled,
+    });
+    let predicate = VerifyPredicate::UpdateById {
+        id: args.id,
+        expected_title: args.title,
+        expected_notes: args.notes,
+    };
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
+    Ok(outcome)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct StatusChangeArgs {
+    /// UUID of the to-do to mark completed or canceled.
+    pub id: String,
+}
+
+pub async fn things_complete_todo(
+    state: AppState,
+    args: StatusChangeArgs,
+) -> anyhow::Result<WriteOutcome> {
+    if args.id.trim().is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "id".into(),
+            reason: "id must be non-empty".into(),
+        }
+        .into());
+    }
+    let op = Operation::CompleteTodo { id: args.id.clone() };
+    let predicate = VerifyPredicate::StatusChange {
+        id: args.id,
+        want: crate::core::types::TaskStatus::Completed,
+    };
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
+    Ok(outcome)
+}
+
+pub async fn things_cancel_todo(
+    state: AppState,
+    args: StatusChangeArgs,
+) -> anyhow::Result<WriteOutcome> {
+    if args.id.trim().is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "id".into(),
+            reason: "id must be non-empty".into(),
+        }
+        .into());
+    }
+    let op = Operation::CancelTodo { id: args.id.clone() };
+    let predicate = VerifyPredicate::StatusChange {
+        id: args.id,
+        want: crate::core::types::TaskStatus::Canceled,
+    };
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
+    Ok(outcome)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct MoveTodoArgs {
+    /// UUID of the to-do to move.
+    pub id: String,
+    /// Target project or area UUID. `None` (omitted) moves to the Inbox.
+    #[serde(default)]
+    pub list_id: Option<String>,
+}
+
+pub async fn things_move_todo(
+    state: AppState,
+    args: MoveTodoArgs,
+) -> anyhow::Result<WriteOutcome> {
+    if args.id.trim().is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "id".into(),
+            reason: "id must be non-empty".into(),
+        }
+        .into());
+    }
+    let op = Operation::MoveTodo(MoveTodoSpec {
+        id: args.id.clone(),
+        list_id: args.list_id.clone(),
+    });
+    let predicate = VerifyPredicate::MoveById {
+        id: args.id,
+        expected_list_id: args.list_id,
+    };
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
+    Ok(outcome)
+}

@@ -54,8 +54,10 @@ impl Writer {
             return Err(ThingsError::TestDbWriteForbidden);
         }
 
-        // 2. Auth gate — only operations that require the token care.
-        if op.requires_auth_token() && self.auth.is_none() {
+        // 2. Auth gate — only operations that require the token care, and only
+        // in Live mode (DryRun never calls the executor so the token is
+        // unnecessary there).
+        if op.requires_auth_token() && self.auth.is_none() && self.safety == SafetyMode::Live {
             return Err(ThingsError::MissingAuthToken {
                 hint: "set THINGS_AUTH_TOKEN or config.toml [things].auth_token".into(),
             });
