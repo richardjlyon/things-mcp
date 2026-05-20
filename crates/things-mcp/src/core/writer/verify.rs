@@ -84,7 +84,7 @@ pub async fn verify(
 }
 
 fn check_once(c: &Connection, pred: &VerifyPredicate) -> rusqlite::Result<Option<TodoSummary>> {
-    use crate::core::reader::queries::{row_to_summary, SUMMARY_COLS};
+    use crate::core::reader::queries::{row_to_summary, SUMMARY_COLS, SUMMARY_COLS_LEN};
     match pred {
         VerifyPredicate::CreateByTitle { title, since_unix } => {
             let sql = format!(
@@ -161,11 +161,6 @@ fn check_once(c: &Connection, pred: &VerifyPredicate) -> rusqlite::Result<Option
         }
     }
 }
-
-/// Column count of `SUMMARY_COLS` (11) — used by the `UpdateById` branch when
-/// it pulls `t.notes` as an extra trailing column. If `SUMMARY_COLS` ever
-/// changes shape, this constant must move with it.
-const SUMMARY_COLS_LEN: usize = 11;
 
 #[cfg(test)]
 mod tests {

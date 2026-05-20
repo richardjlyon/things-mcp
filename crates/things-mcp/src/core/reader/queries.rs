@@ -21,6 +21,12 @@ pub(crate) const SUMMARY_COLS: &str =
     "t.uuid, t.title, t.status, t.start, t.project, t.area, t.heading, \
      t.startDate, t.deadline, t.creationDate, t.userModificationDate";
 
+/// Number of columns in `SUMMARY_COLS`. Callers that `SELECT {SUMMARY_COLS}, ...`
+/// extra trailing columns use this as the starting index for those extras. If
+/// `SUMMARY_COLS` ever gains or loses a column, this constant must move with it
+/// (and so must `row_to_summary`).
+pub(crate) const SUMMARY_COLS_LEN: usize = 11;
+
 pub(crate) fn row_to_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<TodoSummary> {
     use crate::core::reader::dates::decode_things_date;
     Ok(TodoSummary {
