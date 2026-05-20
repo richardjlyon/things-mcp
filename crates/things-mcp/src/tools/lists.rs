@@ -7,6 +7,7 @@ use crate::core::reader::queries::{list_inbox, list_today, ListInboxParams, List
 use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
 use crate::core::reader::queries::{list_anytime, ListAnytimeParams};
 use crate::core::reader::queries::{list_someday, ListSomedayParams};
+use crate::core::reader::queries::{list_logbook, ListLogbookParams};
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
@@ -113,5 +114,31 @@ pub async fn things_list_someday(
         limit: args.limit.unwrap_or(200),
     };
     let rows = list_someday(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListLogbookArgs {
+    /// Lower bound on completion date as `YYYY-MM-DD` (inclusive). Optional.
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Upper bound on completion date as `YYYY-MM-DD` (inclusive — end-of-day). Optional.
+    #[serde(default)]
+    pub to: Option<String>,
+    /// Cap on returned rows. Defaults to 100.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_logbook(
+    state: AppState,
+    args: ListLogbookArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListLogbookParams {
+        from_iso: args.from,
+        to_iso: args.to,
+        limit: args.limit.unwrap_or(100),
+    };
+    let rows = list_logbook(&state.pool, params).await?;
     Ok(rows)
 }

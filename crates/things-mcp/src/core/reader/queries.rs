@@ -281,6 +281,78 @@ pub async fn list_someday(
     attach_tags(pool, rows).await
 }
 
+pub struct ListLogbookParams {
+    pub from_iso: Option<String>,
+    pub to_iso: Option<String>,
+    pub limit: u32,
+}
+
+impl Default for ListLogbookParams {
+    fn default() -> Self {
+        Self {
+            from_iso: None,
+            to_iso: None,
+            limit: 100,
+        }
+    }
+}
+
+pub async fn list_logbook(
+    pool: &ReaderPool,
+    params: ListLogbookParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    use crate::core::reader::dates::{parse_iso_date, ymd_to_unix_utc};
+    let from_unix: Option<f64> = match params.from_iso.as_deref() {
+        None => None,
+        Some(s) => Some(
+            parse_iso_date(s)
+                .map(|(y, m, d)| ymd_to_unix_utc(y, m, d) as f64)
+                .ok_or_else(|| ThingsError::InvalidInput {
+                    field: "from".into(),
+                    reason: format!("expected YYYY-MM-DD, got {s:?}"),
+                })?,
+        ),
+    };
+    let to_unix: Option<f64> = match params.to_iso.as_deref() {
+        None => None,
+        Some(s) => Some(
+            parse_iso_date(s)
+                // End of the requested day, exclusive of the next day.
+                .map(|(y, m, d)| (ymd_to_unix_utc(y, m, d) + 86_400) as f64)
+                .ok_or_else(|| ThingsError::InvalidInput {
+                    field: "to".into(),
+                    reason: format!("expected YYYY-MM-DD, got {s:?}"),
+                })?,
+        ),
+    };
+
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        WHERE t.trashed = 0
+          AND t.type = 0
+          AND t.status IN (2, 3)
+          AND (?1 IS NULL OR t.stopDate >= ?1)
+          AND (?2 IS NULL OR t.stopDate <  ?2)
+        ORDER BY t.stopDate DESC
+        LIMIT ?3
+        "#,
+    );
+    let limit = params.limit as i64;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map(
+                rusqlite::params![from_unix, to_unix, limit],
+                row_to_summary,
+            )?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 /// Helper used by every list query that returns `TodoSummary` rows.
 async fn attach_tags(
     pool: &ReaderPool,
@@ -464,6 +536,45 @@ mod tests {
         let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(rows.len(), 1);
         assert!(titles.contains(&"Read research papers"));
+    }
+
+    #[tokio::test]
+    async fn list_logbook_returns_completed_and_canceled_ordered_by_stopdate() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_logbook(&pool, ListLogbookParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Old completed"));
+        assert!(titles.contains(&"Old canceled"));
+        // Older completion comes after newer one (DESC by stopDate).
+        let pos_old = titles.iter().position(|t| *t == "Old completed").unwrap();
+        let pos_newer = titles.iter().position(|t| *t == "Old canceled").unwrap();
+        assert!(pos_newer < pos_old);
+    }
+
+    #[tokio::test]
+    async fn list_logbook_from_bound_excludes_older_items() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        // Old completed has stopDate 1714000000 ≈ 2024-04-24; old canceled has 1714500000 ≈ 2024-04-30.
+        // from = 2024-04-27 → only canceled survives.
+        let rows = list_logbook(
+            &pool,
+            ListLogbookParams {
+                from_iso: Some("2024-04-27".to_string()),
+                to_iso: None,
+                limit: 100,
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Old canceled"));
+        assert!(!titles.contains(&"Old completed"));
     }
 
     #[tokio::test]

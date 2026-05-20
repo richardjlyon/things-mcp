@@ -9,9 +9,9 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerH
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 use crate::tools::lists::{
-    things_list_anytime, things_list_inbox, things_list_someday, things_list_today,
-    things_list_upcoming, ListAnytimeArgs, ListInboxArgs, ListSomedayArgs, ListTodayArgs,
-    ListUpcomingArgs,
+    things_list_anytime, things_list_inbox, things_list_logbook, things_list_someday,
+    things_list_today, things_list_upcoming, ListAnytimeArgs, ListInboxArgs,
+    ListLogbookArgs, ListSomedayArgs, ListTodayArgs, ListUpcomingArgs,
 };
 
 #[derive(Clone)]
@@ -121,6 +121,26 @@ impl ThingsServer {
         Parameters(args): Parameters<ListSomedayArgs>,
     ) -> Result<Json<Vec<TodoSummary>>, McpError> {
         let rows = things_list_someday(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_list_logbook",
+        description = "Return completed or canceled to-dos, newest first. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_list_logbook(
+        &self,
+        Parameters(args): Parameters<ListLogbookArgs>,
+    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+        let rows = things_list_logbook(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))
