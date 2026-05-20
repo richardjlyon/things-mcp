@@ -3,10 +3,12 @@
 
 pub mod add_project;
 pub mod add_todo;
+pub mod update_project;
 pub mod update_todo;
 
 pub use add_project::AddProjectSpec;
 pub use add_todo::AddTodoSpec;
+pub use update_project::UpdateProjectSpec;
 pub use update_todo::UpdateTodoSpec;
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +19,7 @@ pub enum Operation {
     AddTodo(AddTodoSpec),
     AddProject(AddProjectSpec),
     UpdateTodo(UpdateTodoSpec),
+    UpdateProject(UpdateProjectSpec),
 }
 
 impl Operation {
@@ -25,6 +28,7 @@ impl Operation {
             Operation::AddTodo(_) => "add_todo",
             Operation::AddProject(_) => "add_project",
             Operation::UpdateTodo(_) => "update_todo",
+            Operation::UpdateProject(_) => "update_project",
         }
     }
 
@@ -33,6 +37,7 @@ impl Operation {
             Operation::AddTodo(_) => false,
             Operation::AddProject(_) => false,
             Operation::UpdateTodo(_) => true,
+            Operation::UpdateProject(_) => true,
         }
     }
 
@@ -41,6 +46,7 @@ impl Operation {
             Operation::AddTodo(spec) => add_todo::render_add_todo(spec),
             Operation::AddProject(spec) => add_project::render_add_project(spec),
             Operation::UpdateTodo(spec) => update_todo::render_update_todo(spec),
+            Operation::UpdateProject(spec) => update_project::render_update_project(spec),
         }
     }
 }
