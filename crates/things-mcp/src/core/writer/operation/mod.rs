@@ -3,12 +3,14 @@
 
 pub mod add_project;
 pub mod add_todo;
+pub mod move_todo;
 pub mod status_change;
 pub mod update_project;
 pub mod update_todo;
 
 pub use add_project::AddProjectSpec;
 pub use add_todo::AddTodoSpec;
+pub use move_todo::MoveTodoSpec;
 pub use update_project::UpdateProjectSpec;
 pub use update_todo::UpdateTodoSpec;
 
@@ -23,6 +25,7 @@ pub enum Operation {
     UpdateProject(UpdateProjectSpec),
     CompleteTodo { id: String },
     CancelTodo { id: String },
+    MoveTodo(MoveTodoSpec),
 }
 
 impl Operation {
@@ -34,6 +37,7 @@ impl Operation {
             Operation::UpdateProject(_) => "update_project",
             Operation::CompleteTodo { .. } => "complete_todo",
             Operation::CancelTodo { .. } => "cancel_todo",
+            Operation::MoveTodo(_) => "move_todo",
         }
     }
 
@@ -45,6 +49,7 @@ impl Operation {
             Operation::UpdateProject(_) => true,
             Operation::CompleteTodo { .. } => true,
             Operation::CancelTodo { .. } => true,
+            Operation::MoveTodo(_) => true,
         }
     }
 
@@ -56,6 +61,7 @@ impl Operation {
             Operation::UpdateProject(spec) => update_project::render_update_project(spec),
             Operation::CompleteTodo { id } => status_change::render_complete_todo(id),
             Operation::CancelTodo { id } => status_change::render_cancel_todo(id),
+            Operation::MoveTodo(spec) => move_todo::render_move_todo(spec),
         }
     }
 }

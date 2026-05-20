@@ -29,6 +29,13 @@ pub enum VerifyPredicate {
     },
     /// The row at this id should have this status.
     StatusChange { id: String, want: TaskStatus },
+    /// The row at this id should have its project/area column set to the
+    /// expected_list_id. `Some(uuid)` matches when t.project = uuid OR
+    /// t.area = uuid. `None` matches when BOTH columns are NULL (the inbox).
+    MoveById {
+        id: String,
+        expected_list_id: Option<String>,
+    },
 }
 
 #[derive(Debug)]
@@ -50,7 +57,10 @@ pub async fn verify(
 
     // For UpdateById / StatusChange the row should already exist in the DB —
     // if it never does, no amount of polling will help, so short-circuit.
-    if let VerifyPredicate::UpdateById { id, .. } | VerifyPredicate::StatusChange { id, .. } = &pred {
+    if let VerifyPredicate::UpdateById { id, .. }
+        | VerifyPredicate::StatusChange { id, .. }
+        | VerifyPredicate::MoveById { id, .. } = &pred
+    {
         let id_for_probe = id.clone();
         let exists = pool
             .with_conn(move |c| -> rusqlite::Result<bool> {
@@ -164,6 +174,34 @@ fn check_once(c: &Connection, pred: &VerifyPredicate) -> rusqlite::Result<Option
             };
             let summary = row_to_summary(r)?;
             if summary.status == *want {
+                Ok(Some(summary))
+            } else {
+                Ok(None)
+            }
+        }
+        VerifyPredicate::MoveById { id, expected_list_id } => {
+            let sql = format!(
+                r#"
+                SELECT {SUMMARY_COLS}
+                FROM TMTask AS t
+                WHERE t.uuid = ? AND t.trashed = 0
+                LIMIT 1
+                "#
+            );
+            let mut stmt = c.prepare_cached(&sql)?;
+            let mut rows = stmt.query(rusqlite::params![id])?;
+            let Some(r) = rows.next()? else {
+                return Ok(None);
+            };
+            let summary = row_to_summary(r)?;
+            let matches = match expected_list_id.as_deref() {
+                None => summary.project_id.is_none() && summary.area_id.is_none(),
+                Some(want) => {
+                    summary.project_id.as_deref() == Some(want)
+                        || summary.area_id.as_deref() == Some(want)
+                }
+            };
+            if matches {
                 Ok(Some(summary))
             } else {
                 Ok(None)
@@ -300,5 +338,49 @@ mod tests {
             VerifyOutcome::Verified { row, .. } => assert_eq!(row.id, "todo-3"),
             other => panic!("expected Verified, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn verify_move_by_id_matches_when_row_under_expected_list() {
+        let (_tmp, pool) = open_pool().await;
+        let (timeout, interval) = cfg();
+        // The fixture's todo-4 lives under project proj-1.
+        let out = verify(
+            &pool,
+            VerifyPredicate::MoveById {
+                id: "todo-4".into(),
+                expected_list_id: Some("proj-1".into()),
+            },
+            timeout,
+            interval,
+        )
+        .await
+        .unwrap();
+        match out {
+            VerifyOutcome::Verified { row, .. } => {
+                assert_eq!(row.id, "todo-4");
+                assert_eq!(row.project_id.as_deref(), Some("proj-1"));
+            }
+            other => panic!("expected Verified, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn verify_move_by_id_inbox_matches_when_both_parent_columns_null() {
+        let (_tmp, pool) = open_pool().await;
+        let (timeout, interval) = cfg();
+        // The fixture's todo-1 ('Buy milk') has no project + no area.
+        let out = verify(
+            &pool,
+            VerifyPredicate::MoveById {
+                id: "todo-1".into(),
+                expected_list_id: None,
+            },
+            timeout,
+            interval,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(out, VerifyOutcome::Verified { .. }));
     }
 }
