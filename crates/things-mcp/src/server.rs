@@ -9,6 +9,7 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerH
 use crate::core::types::{Area, Project, ProjectFull, Tag, TodoFull, TodoSummary};
 use crate::tools::todos::{things_get_todo, GetTodoArgs};
 use crate::tools::projects::{things_get_project, GetProjectArgs};
+use crate::tools::search::{things_search, SearchArgs};
 use crate::state::AppState;
 use crate::tools::lists::{
     things_list_anytime, things_list_areas, things_list_by_tag, things_list_inbox,
@@ -288,6 +289,26 @@ impl ThingsServer {
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(res))
+    }
+
+    #[tool(
+        name = "things_search",
+        description = "Search to-dos by free text (title + notes) and structured filters (tags, area, project, status, deadline range, scheduled range). Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_search(
+        &self,
+        Parameters(args): Parameters<SearchArgs>,
+    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+        let rows = things_search(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
     }
 }
 
