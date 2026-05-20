@@ -11,11 +11,11 @@ use crate::tools::todos::{things_get_todo, GetTodoArgs};
 use crate::tools::projects::{things_get_project, GetProjectArgs};
 use crate::state::AppState;
 use crate::tools::lists::{
-    things_list_anytime, things_list_areas, things_list_inbox, things_list_logbook,
-    things_list_projects, things_list_someday, things_list_tags, things_list_today,
-    things_list_trash, things_list_upcoming, ListAnytimeArgs, ListAreasArgs,
-    ListInboxArgs, ListLogbookArgs, ListProjectsArgs, ListSomedayArgs, ListTagsArgs,
-    ListTodayArgs, ListTrashArgs, ListUpcomingArgs,
+    things_list_anytime, things_list_areas, things_list_by_tag, things_list_inbox,
+    things_list_logbook, things_list_projects, things_list_someday, things_list_tags,
+    things_list_today, things_list_trash, things_list_upcoming, ListAnytimeArgs,
+    ListAreasArgs, ListByTagArgs, ListInboxArgs, ListLogbookArgs, ListProjectsArgs,
+    ListSomedayArgs, ListTagsArgs, ListTodayArgs, ListTrashArgs, ListUpcomingArgs,
 };
 
 #[derive(Clone)]
@@ -225,6 +225,26 @@ impl ThingsServer {
         Parameters(args): Parameters<ListTagsArgs>,
     ) -> Result<Json<Vec<Tag>>, McpError> {
         let rows = things_list_tags(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_list_by_tag",
+        description = "Return to-dos carrying a given tag. `tag` accepts the tag's title or UUID. With `recurse=true` (default), descendants of the tag are included. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_list_by_tag(
+        &self,
+        Parameters(args): Parameters<ListByTagArgs>,
+    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+        let rows = things_list_by_tag(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))

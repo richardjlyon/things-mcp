@@ -787,6 +787,74 @@ pub async fn get_project(
     }))
 }
 
+pub struct ListByTagParams {
+    pub tag: String,
+    pub recurse: bool,
+    pub limit: u32,
+}
+
+impl Default for ListByTagParams {
+    fn default() -> Self {
+        Self {
+            tag: String::new(),
+            recurse: true,
+            limit: 200,
+        }
+    }
+}
+
+pub async fn list_by_tag(
+    pool: &ReaderPool,
+    params: ListByTagParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    let tag = params.tag.clone();
+    let limit = params.limit as i64;
+    let sql = if params.recurse {
+        format!(
+            r#"
+            WITH RECURSIVE tag_tree(uuid) AS (
+                SELECT uuid FROM TMTag WHERE title = ?1 OR uuid = ?1
+                UNION ALL
+                SELECT g.uuid FROM TMTag AS g JOIN tag_tree AS tt ON g.parent = tt.uuid
+            )
+            SELECT DISTINCT {SUMMARY_COLS}
+            FROM TMTask AS t
+            JOIN TMTaskTag AS tx ON tx.tasks = t.uuid
+            JOIN tag_tree    ON tx.tags = tag_tree.uuid
+            WHERE t.trashed = 0 AND t.type = 0
+            ORDER BY t.creationDate DESC
+            LIMIT ?2
+            "#,
+        )
+    } else {
+        format!(
+            r#"
+            SELECT DISTINCT {SUMMARY_COLS}
+            FROM TMTask AS t
+            JOIN TMTaskTag AS tx ON tx.tasks = t.uuid
+            JOIN TMTag      AS g  ON g.uuid = tx.tags
+            WHERE (g.title = ?1 OR g.uuid = ?1)
+              AND t.trashed = 0
+              AND t.type = 0
+            ORDER BY t.creationDate DESC
+            LIMIT ?2
+            "#,
+        )
+    };
+
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map(
+                rusqlite::params![tag, limit],
+                row_to_summary,
+            )?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 fn unix_to_iso(secs: f64) -> String {
     // Minimal ISO-8601 emitter so we don't pull in `chrono` for one helper.
     let s = secs as i64;
@@ -1128,5 +1196,69 @@ mod tests {
         let pool = ReaderPool::new(path, 2).await.unwrap();
         let res = get_project(&pool, "does-not-exist".to_string()).await.unwrap();
         assert!(res.is_none());
+    }
+
+    #[tokio::test]
+    async fn list_by_tag_non_recursive_returns_direct_matches_only() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        // 'Errand' is the parent tag. todo-2 is tagged 'Errand' directly;
+        // todo-4 is tagged 'Call' (child of 'Errand') — without recurse, todo-4 is excluded.
+        let rows = list_by_tag(
+            &pool,
+            ListByTagParams {
+                tag: "Errand".to_string(),
+                recurse: false,
+                limit: 200,
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Call the dentist"));
+        assert!(!titles.contains(&"Read RFC 9457"));
+    }
+
+    #[tokio::test]
+    async fn list_by_tag_recursive_picks_up_child_tags() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_by_tag(
+            &pool,
+            ListByTagParams {
+                tag: "Errand".to_string(),
+                recurse: true,
+                limit: 200,
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Call the dentist"));
+        assert!(titles.contains(&"Read RFC 9457"));
+    }
+
+    #[tokio::test]
+    async fn list_by_tag_accepts_uuid_input_too() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_by_tag(
+            &pool,
+            ListByTagParams {
+                tag: "tag-deep".to_string(),
+                recurse: false,
+                limit: 200,
+            },
+        )
+        .await
+        .unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(titles, vec!["Read research papers"]);
     }
 }

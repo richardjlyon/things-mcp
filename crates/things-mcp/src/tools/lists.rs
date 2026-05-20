@@ -178,6 +178,7 @@ use crate::core::reader::queries::{list_projects, ListProjectsParams, ProjectSta
 use crate::core::types::Project;
 use crate::core::reader::queries::list_tags;
 use crate::core::types::Tag;
+use crate::core::reader::queries::{list_by_tag, ListByTagParams};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, Default)]
 #[serde(rename_all = "snake_case")]
@@ -228,5 +229,30 @@ pub async fn things_list_tags(
     _args: ListTagsArgs,
 ) -> anyhow::Result<Vec<Tag>> {
     let rows = list_tags(&state.pool).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+pub struct ListByTagArgs {
+    /// Tag identifier — either the user-facing title (`"Errand"`) or the UUID (`"tag-errand"`).
+    pub tag: String,
+    /// If true (default), also matches descendants of the named tag.
+    #[serde(default)]
+    pub recurse: Option<bool>,
+    /// Cap on returned rows. Defaults to 200.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_by_tag(
+    state: AppState,
+    args: ListByTagArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListByTagParams {
+        tag: args.tag,
+        recurse: args.recurse.unwrap_or(true),
+        limit: args.limit.unwrap_or(200),
+    };
+    let rows = list_by_tag(&state.pool, params).await?;
     Ok(rows)
 }
