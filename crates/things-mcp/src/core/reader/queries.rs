@@ -9,6 +9,33 @@ use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
 use crate::core::types::{StartBucket, TaskStatus, TodoSummary};
 
+/// Standard `TodoSummary`-shaped column projection used by every list query.
+/// SQL must `SELECT` columns in this exact order:
+///
+/// `t.uuid, t.title, t.status, t.start, t.project, t.area, t.heading,
+///  t.startDate, t.deadline, t.creationDate, t.userModificationDate`
+pub(crate) const SUMMARY_COLS: &str =
+    "t.uuid, t.title, t.status, t.start, t.project, t.area, t.heading, \
+     t.startDate, t.deadline, t.creationDate, t.userModificationDate";
+
+pub(crate) fn row_to_summary(r: &rusqlite::Row<'_>) -> rusqlite::Result<TodoSummary> {
+    use crate::core::reader::dates::decode_things_date;
+    Ok(TodoSummary {
+        id: r.get::<_, String>(0)?,
+        title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+        status: TaskStatus::from_sqlite(r.get::<_, i64>(2)?),
+        start: StartBucket::from_sqlite(r.get::<_, i64>(3)?),
+        project_id: r.get::<_, Option<String>>(4)?,
+        area_id: r.get::<_, Option<String>>(5)?,
+        heading_id: r.get::<_, Option<String>>(6)?,
+        tags: Vec::new(),
+        scheduled: r.get::<_, Option<i64>>(7)?.and_then(decode_things_date),
+        deadline: r.get::<_, Option<i64>>(8)?.and_then(decode_things_date),
+        creation_date: r.get::<_, Option<f64>>(9)?.map(unix_to_iso),
+        modification_date: r.get::<_, Option<f64>>(10)?.map(unix_to_iso),
+    })
+}
+
 pub struct ListInboxParams {
     pub include_completed: bool,
     pub limit: u32,
@@ -34,10 +61,7 @@ pub async fn list_inbox(
     };
     let sql = format!(
         r#"
-        SELECT
-            t.uuid, t.title, t.type, t.status, t.start,
-            t.project, t.area, t.heading,
-            t.creationDate, t.userModificationDate
+        SELECT {SUMMARY_COLS}
         FROM TMTask AS t
         WHERE t.trashed = 0
           AND t.type = 0
@@ -51,29 +75,12 @@ pub async fn list_inbox(
     let rows = pool
         .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
             let mut stmt = c.prepare_cached(&sql)?;
-            let iter = stmt.query_map([limit], |r| {
-                Ok(TodoSummary {
-                    id: r.get::<_, String>(0)?,
-                    title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                    status: TaskStatus::from_sqlite(r.get::<_, i64>(3)?),
-                    start: StartBucket::from_sqlite(r.get::<_, i64>(4)?),
-                    project_id: r.get::<_, Option<String>>(5)?,
-                    area_id: r.get::<_, Option<String>>(6)?,
-                    heading_id: r.get::<_, Option<String>>(7)?,
-                    tags: Vec::new(),
-                    scheduled: None,
-                    deadline: None,
-                    creation_date: r.get::<_, Option<f64>>(8)?.map(unix_to_iso),
-                    modification_date: r.get::<_, Option<f64>>(9)?.map(unix_to_iso),
-                })
-            })?;
+            let iter = stmt.query_map([limit], row_to_summary)?;
             iter.collect()
         })
         .await?;
-    // Tags are joined separately (small N; one extra round-trip is acceptable
-    // for the inbox view).
     let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
-    let tag_map = fetch_tags_for_tasks(pool, ids.clone()).await?;
+    let tag_map = fetch_tags_for_tasks(pool, ids).await?;
     let mut with_tags = rows;
     for row in with_tags.iter_mut() {
         if let Some(v) = tag_map.get(&row.id) {
