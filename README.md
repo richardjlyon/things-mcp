@@ -2,7 +2,7 @@
 
 A local-first MCP server, written in Rust, bridging Claude (Claude Code on the Mac and Claude.ai's Cowork sandbox) to a live Things 3 instance.
 
-**Status:** Plan 4 — read surface complete + first write tool (`things_add_todo`) shipping over the JSON URL scheme. Writes go through `core/writer/`: typed `Operation` → percent-encoded URL → `/usr/bin/open -g` (or injected test executor) → bounded poll against the SQLite reader → `WriteOutcome`. Test-DB mode short-circuits to dry-run; auth-token (required only for updates) wired but not yet exercised. See `docs/superpowers/plans/` for the active plan and follow-ons.
+**Status:** Plan 5 — full write surface shipping over the JSON URL scheme: `things_add_todo`, `things_add_project`, `things_update_todo`, `things_update_project`, `things_complete_todo`, `things_cancel_todo`, `things_move_todo`, and the `things_bulk_json` power tool. Updates flow through the auth-token gate (`THINGS_AUTH_TOKEN` env or `[things].auth_token` in `config.toml`). Bulk skips per-element verify; all other tools poll the reader for a typed predicate (`CreateByTitle`, `UpdateById`, `StatusChange`, `MoveById`) up to `writer.poll_timeout_ms`. See `docs/superpowers/plans/` for the active plan and follow-ons.
 
 **Quick start (stdio, Claude Code on the Mac):**
 
