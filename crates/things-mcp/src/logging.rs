@@ -7,11 +7,12 @@ use std::path::Path;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 pub fn init(level: &str, log_dir: Option<&Path>) -> anyhow::Result<()> {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(level));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
 
     let stderr_layer = fmt::layer().with_writer(std::io::stderr).with_ansi(false);
-    let registry = tracing_subscriber::registry().with(filter).with(stderr_layer);
+    let registry = tracing_subscriber::registry()
+        .with(filter)
+        .with(stderr_layer);
 
     if let Some(dir) = log_dir {
         std::fs::create_dir_all(dir)?;
