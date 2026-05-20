@@ -7,7 +7,8 @@ use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
 use crate::core::types::{Area, Project, ProjectFull, Tag, TodoFull, TodoSummary};
-use crate::tools::todos::{things_get_todo, GetTodoArgs};
+use crate::tools::todos::{things_add_todo, things_get_todo, AddTodoArgs, GetTodoArgs};
+use crate::core::writer::outcome::WriteOutcome;
 use crate::tools::projects::{things_get_project, GetProjectArgs};
 use crate::tools::search::{things_search, SearchArgs};
 use crate::state::AppState;
@@ -309,6 +310,26 @@ impl ThingsServer {
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_add_todo",
+        description = "Create a new to-do in Things. Returns a WriteOutcome with the new id once verified by polling the SQLite reader. Requires `title`; all other fields are optional. Open-world: side-effects the live Things app via the JSON URL scheme.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_add_todo(
+        &self,
+        Parameters(args): Parameters<AddTodoArgs>,
+    ) -> Result<Json<WriteOutcome>, McpError> {
+        let out = things_add_todo(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
     }
 }
 
