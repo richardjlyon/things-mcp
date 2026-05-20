@@ -6,8 +6,9 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
-use crate::core::types::{Area, Project, Tag, TodoFull, TodoSummary};
+use crate::core::types::{Area, Project, ProjectFull, Tag, TodoFull, TodoSummary};
 use crate::tools::todos::{things_get_todo, GetTodoArgs};
+use crate::tools::projects::{things_get_project, GetProjectArgs};
 use crate::state::AppState;
 use crate::tools::lists::{
     things_list_anytime, things_list_areas, things_list_inbox, things_list_logbook,
@@ -244,6 +245,26 @@ impl ThingsServer {
         Parameters(args): Parameters<GetTodoArgs>,
     ) -> Result<Json<Option<TodoFull>>, McpError> {
         let res = things_get_todo(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(res))
+    }
+
+    #[tool(
+        name = "things_get_project",
+        description = "Return a single project with its child to-dos and headings. Returns null if not found. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_get_project(
+        &self,
+        Parameters(args): Parameters<GetProjectArgs>,
+    ) -> Result<Json<Option<ProjectFull>>, McpError> {
+        let res = things_get_project(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(res))

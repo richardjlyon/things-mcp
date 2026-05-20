@@ -8,7 +8,8 @@
 use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
 use crate::core::types::{
-    Area, ChecklistItem, Project, StartBucket, Tag, TaskStatus, TodoFull, TodoSummary,
+    Area, ChecklistItem, Heading, Project, ProjectFull, StartBucket, Tag, TaskStatus,
+    TodoFull, TodoSummary,
 };
 
 /// Standard `TodoSummary`-shaped column projection used by every list query.
@@ -638,6 +639,154 @@ pub async fn get_todo(
     }))
 }
 
+pub async fn get_project(
+    pool: &ReaderPool,
+    id: String,
+) -> Result<Option<ProjectFull>, ThingsError> {
+    // 1. Project meta row.
+    let id_for_meta = id.clone();
+    let meta_sql = r#"
+        SELECT t.uuid, t.title, t.area, t.status, t.notes, t.stopDate
+        FROM TMTask AS t
+        WHERE t.uuid = ?1 AND t.type = 1
+    "#;
+    let meta = pool
+        .with_conn(move |c| -> rusqlite::Result<Option<(Project, Option<f64>)>> {
+            let mut stmt = c.prepare_cached(meta_sql)?;
+            let mut rows = stmt.query([id_for_meta.as_str()])?;
+            if let Some(row) = rows.next()? {
+                let project = Project {
+                    id: row.get::<_, String>(0)?,
+                    title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    area_id: row.get::<_, Option<String>>(2)?,
+                    status: TaskStatus::from_sqlite(row.get::<_, i64>(3)?),
+                    notes: row.get::<_, Option<String>>(4)?,
+                    tags: Vec::new(),
+                };
+                let stop_date: Option<f64> = row.get(5)?;
+                Ok(Some((project, stop_date)))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    let (mut project, stop_date) = match meta {
+        Some(p) => p,
+        None => return Ok(None),
+    };
+
+    // 2. Project tags via the same junction we use for to-dos.
+    let tag_map = fetch_tags_for_tasks(pool, vec![id.clone()]).await?;
+    if let Some(v) = tag_map.get(&id) {
+        project.tags = v.clone();
+    }
+
+    // 3. All child rows (headings + to-dos) under the project, ordered by index.
+    let id_for_children = id.clone();
+    let children_sql = format!(
+        r#"
+        SELECT t.uuid, t.title, t.type, t.status, t.start, t.project, t.area, t.heading,
+               t.startDate, t.deadline, t.creationDate, t.userModificationDate
+        FROM TMTask AS t
+        WHERE t.project = ?1 AND t.trashed = 0
+        ORDER BY t."index"
+        "#,
+    );
+    let children = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<(i64, TodoSummary)>> {
+            let mut stmt = c.prepare_cached(&children_sql)?;
+            let iter = stmt.query_map([id_for_children.as_str()], |r| {
+                let kind_int: i64 = r.get(2)?;
+                // For headings we still call row_to_summary so we get the title/id; the kind
+                // is returned alongside so the caller can split them.
+                let summary = TodoSummary {
+                    id: r.get::<_, String>(0)?,
+                    title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    status: TaskStatus::from_sqlite(r.get::<_, i64>(3)?),
+                    start: StartBucket::from_sqlite(r.get::<_, i64>(4)?),
+                    project_id: r.get::<_, Option<String>>(5)?,
+                    area_id: r.get::<_, Option<String>>(6)?,
+                    heading_id: r.get::<_, Option<String>>(7)?,
+                    tags: Vec::new(),
+                    scheduled: r
+                        .get::<_, Option<i64>>(8)?
+                        .and_then(crate::core::reader::dates::decode_things_date),
+                    deadline: r
+                        .get::<_, Option<i64>>(9)?
+                        .and_then(crate::core::reader::dates::decode_things_date),
+                    creation_date: r.get::<_, Option<f64>>(10)?.map(unix_to_iso),
+                    modification_date: r.get::<_, Option<f64>>(11)?.map(unix_to_iso),
+                };
+                Ok((kind_int, summary))
+            })?;
+            iter.collect()
+        })
+        .await?;
+
+    // 4. Split children into headings vs direct to-dos. For to-dos that point to
+    //    a heading via `heading_id`, group them under that heading.
+    let mut headings: std::collections::BTreeMap<String, Heading> = Default::default();
+    let mut direct_items: Vec<TodoSummary> = Vec::new();
+    let mut heading_order: Vec<String> = Vec::new();
+
+    for (kind, summary) in children.iter() {
+        if *kind == 2 {
+            heading_order.push(summary.id.clone());
+            headings.insert(
+                summary.id.clone(),
+                Heading {
+                    id: summary.id.clone(),
+                    title: summary.title.clone(),
+                    items: Vec::new(),
+                },
+            );
+        }
+    }
+    for (kind, summary) in children.into_iter() {
+        if kind == 2 {
+            continue;
+        }
+        match &summary.heading_id {
+            Some(hid) if headings.contains_key(hid) => {
+                headings.get_mut(hid).unwrap().items.push(summary);
+            }
+            _ => direct_items.push(summary),
+        }
+    }
+
+    // 5. Attach tags onto the to-do summaries (direct + per-heading).
+    let mut all_todo_ids: Vec<String> = direct_items.iter().map(|i| i.id.clone()).collect();
+    for h in headings.values() {
+        for i in &h.items {
+            all_todo_ids.push(i.id.clone());
+        }
+    }
+    let todo_tag_map = fetch_tags_for_tasks(pool, all_todo_ids).await?;
+    for item in direct_items.iter_mut() {
+        if let Some(v) = todo_tag_map.get(&item.id) {
+            item.tags = v.clone();
+        }
+    }
+    for h in headings.values_mut() {
+        for item in h.items.iter_mut() {
+            if let Some(v) = todo_tag_map.get(&item.id) {
+                item.tags = v.clone();
+            }
+        }
+    }
+
+    let ordered_headings: Vec<Heading> =
+        heading_order.into_iter().filter_map(|id| headings.remove(&id)).collect();
+
+    Ok(Some(ProjectFull {
+        project,
+        items: direct_items,
+        headings: ordered_headings,
+        completion_date: stop_date.map(unix_to_iso),
+        notes: None,
+    }))
+}
+
 fn unix_to_iso(secs: f64) -> String {
     // Minimal ISO-8601 emitter so we don't pull in `chrono` for one helper.
     let s = secs as i64;
@@ -947,6 +1096,37 @@ mod tests {
         build_fixture(&path).unwrap();
         let pool = ReaderPool::new(path, 2).await.unwrap();
         let res = get_todo(&pool, "does-not-exist".to_string()).await.unwrap();
+        assert!(res.is_none());
+    }
+
+    #[tokio::test]
+    async fn get_project_returns_full_shape_with_headings() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let full = get_project(&pool, "proj-1".to_string()).await.unwrap().unwrap();
+        assert_eq!(full.project.title, "Reading list");
+        assert_eq!(full.headings.len(), 1);
+        assert_eq!(full.headings[0].title, "Articles");
+        let head_items: Vec<_> = full.headings[0]
+            .items
+            .iter()
+            .map(|i| i.title.as_str())
+            .collect();
+        assert_eq!(head_items, vec!["Read intro"]);
+        // todo-4 lives directly under proj-1 (no heading)
+        let direct_items: Vec<_> = full.items.iter().map(|i| i.title.as_str()).collect();
+        assert!(direct_items.contains(&"Read RFC 9457"));
+    }
+
+    #[tokio::test]
+    async fn get_project_returns_none_for_missing_id() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let res = get_project(&pool, "does-not-exist".to_string()).await.unwrap();
         assert!(res.is_none());
     }
 }

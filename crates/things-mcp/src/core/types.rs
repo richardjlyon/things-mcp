@@ -122,6 +122,25 @@ pub struct Tag {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Heading {
+    pub id: String,
+    pub title: String,
+    pub items: Vec<TodoSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProjectFull {
+    #[serde(flatten)]
+    pub project: Project,
+    /// To-dos that live directly under the project (no heading).
+    pub items: Vec<TodoSummary>,
+    /// Headings, each carrying its own ordered child to-dos.
+    pub headings: Vec<Heading>,
+    pub completion_date: Option<String>,
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WriteOutcome {
     pub id: Option<String>,
     pub action: String,
