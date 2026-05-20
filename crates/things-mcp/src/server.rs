@@ -6,7 +6,8 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
-use crate::core::types::{Area, Project, Tag, TodoSummary};
+use crate::core::types::{Area, Project, Tag, TodoFull, TodoSummary};
+use crate::tools::todos::{things_get_todo, GetTodoArgs};
 use crate::state::AppState;
 use crate::tools::lists::{
     things_list_anytime, things_list_areas, things_list_inbox, things_list_logbook,
@@ -226,6 +227,26 @@ impl ThingsServer {
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_get_todo",
+        description = "Return a single to-do with notes, checklist, tags, and a repeating-template flag. Returns null if not found. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_get_todo(
+        &self,
+        Parameters(args): Parameters<GetTodoArgs>,
+    ) -> Result<Json<Option<TodoFull>>, McpError> {
+        let res = things_get_todo(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(res))
     }
 }
 

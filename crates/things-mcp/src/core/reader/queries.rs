@@ -7,7 +7,9 @@
 
 use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
-use crate::core::types::{Area, Project, StartBucket, Tag, TaskStatus, TodoSummary};
+use crate::core::types::{
+    Area, ChecklistItem, Project, StartBucket, Tag, TaskStatus, TodoFull, TodoSummary,
+};
 
 /// Standard `TodoSummary`-shaped column projection used by every list query.
 /// SQL must `SELECT` columns in this exact order:
@@ -549,6 +551,93 @@ pub async fn list_tags(pool: &ReaderPool) -> Result<Vec<Tag>, ThingsError> {
     Ok(rows)
 }
 
+pub async fn get_todo(
+    pool: &ReaderPool,
+    id: String,
+) -> Result<Option<TodoFull>, ThingsError> {
+    let id_for_summary = id.clone();
+    let summary_sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        WHERE t.uuid = ?1 AND t.type = 0
+        "#,
+    );
+    let detail_sql = r#"
+        SELECT t.notes, t.stopDate, t.rt1_recurrenceRule IS NOT NULL AS is_repeating
+        FROM TMTask AS t
+        WHERE t.uuid = ?1 AND t.type = 0
+    "#;
+    let summary_opt = pool
+        .with_conn(move |c| -> rusqlite::Result<Option<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&summary_sql)?;
+            let mut rows = stmt.query([id_for_summary.as_str()])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(row_to_summary(row)?))
+            } else {
+                Ok(None)
+            }
+        })
+        .await?;
+    let summary = match summary_opt {
+        Some(s) => s,
+        None => return Ok(None),
+    };
+
+    let id_for_detail = id.clone();
+    let (notes, completion_date, is_repeating) = pool
+        .with_conn(move |c| -> rusqlite::Result<(Option<String>, Option<String>, bool)> {
+            let mut stmt = c.prepare_cached(detail_sql)?;
+            let mut rows = stmt.query([id_for_detail.as_str()])?;
+            if let Some(row) = rows.next()? {
+                let notes: Option<String> = row.get(0)?;
+                let stop_date: Option<f64> = row.get(1)?;
+                let is_repeating: bool = row.get::<_, i64>(2)? != 0;
+                Ok((notes, stop_date.map(unix_to_iso), is_repeating))
+            } else {
+                Ok((None, None, false))
+            }
+        })
+        .await?;
+
+    let id_for_checklist = id.clone();
+    let checklist = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<ChecklistItem>> {
+            let mut stmt = c.prepare_cached(
+                r#"
+                SELECT c.uuid, c.title, c.status
+                FROM TMChecklistItem AS c
+                WHERE c.task = ?1
+                ORDER BY c."index"
+                "#,
+            )?;
+            let iter = stmt.query_map([id_for_checklist.as_str()], |r| {
+                Ok(ChecklistItem {
+                    id: r.get::<_, String>(0)?,
+                    title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    status: TaskStatus::from_sqlite(r.get::<_, i64>(2)?),
+                })
+            })?;
+            iter.collect()
+        })
+        .await?;
+
+    // Attach tags onto the summary by reusing fetch_tags_for_tasks for one id.
+    let tag_map = fetch_tags_for_tasks(pool, vec![id.clone()]).await?;
+    let mut summary = summary;
+    if let Some(v) = tag_map.get(&id) {
+        summary.tags = v.clone();
+    }
+
+    Ok(Some(TodoFull {
+        summary,
+        notes,
+        checklist,
+        completion_date,
+        is_repeating_template: is_repeating,
+    }))
+}
+
 fn unix_to_iso(secs: f64) -> String {
     // Minimal ISO-8601 emitter so we don't pull in `chrono` for one helper.
     let s = secs as i64;
@@ -835,5 +924,29 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].title, "Reading list");
         assert_eq!(rows[0].tags, vec!["Errand".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn get_todo_returns_full_shape_with_checklist_and_tags() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let full = get_todo(&pool, "todo-1".to_string()).await.unwrap().unwrap();
+        assert_eq!(full.summary.title, "Buy milk");
+        assert_eq!(full.checklist.len(), 3);
+        let titles: Vec<_> = full.checklist.iter().map(|c| c.title.as_str()).collect();
+        assert_eq!(titles, vec!["Walk to shop", "Buy whole milk", "Pay with card"]);
+        assert!(!full.is_repeating_template);
+    }
+
+    #[tokio::test]
+    async fn get_todo_returns_none_for_missing_id() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let res = get_todo(&pool, "does-not-exist".to_string()).await.unwrap();
+        assert!(res.is_none());
     }
 }
