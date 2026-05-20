@@ -36,6 +36,15 @@ pub enum VerifyPredicate {
         id: String,
         expected_list_id: Option<String>,
     },
+    /// The row at `id` either does or doesn't have the named tag, depending
+    /// on `present`. Used by `things_assign_tag` (`present: true`) and
+    /// `things_unassign_tag` (`present: false`). Tag matched by title via
+    /// the TMTaskTag→TMTag join.
+    TagOnTodoById {
+        id: String,
+        tag: String,
+        present: bool,
+    },
 }
 
 #[derive(Debug)]
@@ -59,7 +68,8 @@ pub async fn verify(
     // if it never does, no amount of polling will help, so short-circuit.
     if let VerifyPredicate::UpdateById { id, .. }
         | VerifyPredicate::StatusChange { id, .. }
-        | VerifyPredicate::MoveById { id, .. } = &pred
+        | VerifyPredicate::MoveById { id, .. }
+        | VerifyPredicate::TagOnTodoById { id, .. } = &pred
     {
         let id_for_probe = id.clone();
         let exists = pool
@@ -206,6 +216,39 @@ fn check_once(c: &Connection, pred: &VerifyPredicate) -> rusqlite::Result<Option
             } else {
                 Ok(None)
             }
+        }
+        VerifyPredicate::TagOnTodoById { id, tag, present } => {
+            // Tag-presence join: TMTaskTag.tasks = task uuid, TMTaskTag.tags
+            // = tag uuid, TMTag.title = tag's user-facing name.
+            let has_tag_sql = r#"
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM TMTaskTag AS tt
+                    JOIN TMTag      AS g  ON g.uuid = tt.tags
+                    WHERE tt.tasks = ? AND g.title = ?
+                )
+            "#;
+            let mut stmt = c.prepare_cached(has_tag_sql)?;
+            let has_tag: bool = stmt
+                .query_row(rusqlite::params![id, tag], |r| {
+                    r.get::<_, i64>(0).map(|n| n != 0)
+                })?;
+            if has_tag != *present {
+                return Ok(None);
+            }
+            // Emit a summary just like the other arms do.
+            let summary_sql = format!(
+                r#"
+                SELECT {SUMMARY_COLS}
+                FROM TMTask AS t
+                WHERE t.uuid = ? AND t.trashed = 0
+                LIMIT 1
+                "#
+            );
+            let mut summary_stmt = c.prepare_cached(&summary_sql)?;
+            let mut rows = summary_stmt.query(rusqlite::params![id])?;
+            let Some(r) = rows.next()? else { return Ok(None) };
+            row_to_summary(r).map(Some)
         }
     }
 }
@@ -375,6 +418,49 @@ mod tests {
             VerifyPredicate::MoveById {
                 id: "todo-1".into(),
                 expected_list_id: None,
+            },
+            timeout,
+            interval,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(out, VerifyOutcome::Verified { .. }));
+    }
+
+    #[tokio::test]
+    async fn verify_tag_on_todo_by_id_matches_when_present_true_and_tag_set() {
+        let (_tmp, pool) = open_pool().await;
+        let (timeout, interval) = cfg();
+        // Fixture: todo-2 carries the 'Errand' tag.
+        let out = verify(
+            &pool,
+            VerifyPredicate::TagOnTodoById {
+                id: "todo-2".into(),
+                tag: "Errand".into(),
+                present: true,
+            },
+            timeout,
+            interval,
+        )
+        .await
+        .unwrap();
+        match out {
+            VerifyOutcome::Verified { row, .. } => assert_eq!(row.id, "todo-2"),
+            other => panic!("expected Verified, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
+    async fn verify_tag_on_todo_by_id_matches_when_present_false_and_tag_absent() {
+        let (_tmp, pool) = open_pool().await;
+        let (timeout, interval) = cfg();
+        // Fixture: todo-1 ('Buy milk') has no tags.
+        let out = verify(
+            &pool,
+            VerifyPredicate::TagOnTodoById {
+                id: "todo-1".into(),
+                tag: "Errand".into(),
+                present: false,
             },
             timeout,
             interval,
