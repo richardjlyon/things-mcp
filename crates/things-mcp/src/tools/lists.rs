@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::reader::queries::{list_inbox, ListInboxParams};
+use crate::core::reader::queries::{list_inbox, list_today, ListInboxParams, ListTodayParams};
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
@@ -26,5 +26,23 @@ pub async fn things_list_inbox(
         limit: args.limit.unwrap_or(200),
     };
     let rows = list_inbox(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListTodayArgs {
+    /// Cap on returned rows. Defaults to 200.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_today(
+    state: AppState,
+    args: ListTodayArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListTodayParams {
+        limit: args.limit.unwrap_or(200),
+    };
+    let rows = list_today(&state.pool, params).await?;
     Ok(rows)
 }

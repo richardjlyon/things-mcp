@@ -8,7 +8,9 @@ use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerH
 
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
-use crate::tools::lists::{things_list_inbox, ListInboxArgs};
+use crate::tools::lists::{
+    things_list_inbox, things_list_today, ListInboxArgs, ListTodayArgs,
+};
 
 #[derive(Clone)]
 pub struct ThingsServer {
@@ -37,6 +39,26 @@ impl ThingsServer {
     ) -> Result<Json<Vec<TodoSummary>>, McpError> {
         let state = self.state.clone();
         let rows = things_list_inbox(state, args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_list_today",
+        description = "Return to-dos scheduled for today (start = Anytime with startDate ≤ today). Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_list_today(
+        &self,
+        Parameters(args): Parameters<ListTodayArgs>,
+    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+        let rows = things_list_today(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))

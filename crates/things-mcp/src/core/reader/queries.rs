@@ -79,15 +79,63 @@ pub async fn list_inbox(
             iter.collect()
         })
         .await?;
+    attach_tags(pool, rows).await
+}
+
+pub struct ListTodayParams {
+    pub limit: u32,
+}
+
+impl Default for ListTodayParams {
+    fn default() -> Self {
+        Self { limit: 200 }
+    }
+}
+
+pub async fn list_today(
+    pool: &ReaderPool,
+    params: ListTodayParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    use crate::core::reader::dates::today_packed_utc;
+    let today = today_packed_utc();
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        WHERE t.trashed = 0
+          AND t.type = 0
+          AND t.status = 0
+          AND t.start = 1
+          AND t.startDate > 0
+          AND t.startDate <= ?1
+        ORDER BY t.todayIndex IS NULL, t.todayIndex, t.userModificationDate DESC
+        LIMIT ?2
+        "#,
+    );
+    let limit = params.limit as i64;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map([today, limit], row_to_summary)?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
+/// Helper used by every list query that returns `TodoSummary` rows.
+async fn attach_tags(
+    pool: &ReaderPool,
+    mut rows: Vec<TodoSummary>,
+) -> Result<Vec<TodoSummary>, ThingsError> {
     let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
     let tag_map = fetch_tags_for_tasks(pool, ids).await?;
-    let mut with_tags = rows;
-    for row in with_tags.iter_mut() {
+    for row in rows.iter_mut() {
         if let Some(v) = tag_map.get(&row.id) {
             row.tags = v.clone();
         }
     }
-    Ok(with_tags)
+    Ok(rows)
 }
 
 async fn fetch_tags_for_tasks(
@@ -179,5 +227,18 @@ mod tests {
         let rows = list_inbox(&pool, ListInboxParams::default()).await.unwrap();
         let dentist = rows.iter().find(|r| r.title == "Call the dentist").unwrap();
         assert_eq!(dentist.tags, vec!["Errand".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn list_today_includes_past_scheduled() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_today(&pool, ListTodayParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Today scheduled item"));
+        // Future-scheduled item must NOT be in Today.
+        assert!(!titles.contains(&"Upcoming scheduled item"));
     }
 }
