@@ -7,7 +7,7 @@
 
 use crate::core::error::ThingsError;
 use crate::core::reader::pool::ReaderPool;
-use crate::core::types::{Area, Project, StartBucket, TaskStatus, TodoSummary};
+use crate::core::types::{Area, Project, StartBucket, Tag, TaskStatus, TodoSummary};
 
 /// Standard `TodoSummary`-shaped column projection used by every list query.
 /// SQL must `SELECT` columns in this exact order:
@@ -526,6 +526,29 @@ pub async fn list_areas(pool: &ReaderPool) -> Result<Vec<Area>, ThingsError> {
     Ok(rows)
 }
 
+pub async fn list_tags(pool: &ReaderPool) -> Result<Vec<Tag>, ThingsError> {
+    let sql = r#"
+        SELECT g.uuid, g.title, g.parent, g.shortcut
+        FROM TMTag AS g
+        ORDER BY g."index", g.title
+    "#;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<Tag>> {
+            let mut stmt = c.prepare_cached(sql)?;
+            let iter = stmt.query_map([], |r| {
+                Ok(Tag {
+                    id: r.get::<_, String>(0)?,
+                    title: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
+                    parent_id: r.get::<_, Option<String>>(2)?,
+                    shortcut: r.get::<_, Option<String>>(3)?,
+                })
+            })?;
+            iter.collect()
+        })
+        .await?;
+    Ok(rows)
+}
+
 fn unix_to_iso(secs: f64) -> String {
     // Minimal ISO-8601 emitter so we don't pull in `chrono` for one helper.
     let s = secs as i64;
@@ -775,6 +798,23 @@ mod tests {
         .unwrap();
         let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
         assert_eq!(titles, vec!["Shipped Q1"]);
+    }
+
+    #[tokio::test]
+    async fn list_tags_returns_flat_list_with_parent_links() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_tags(&pool).await.unwrap();
+        assert_eq!(rows.len(), 3);
+        let errand = rows.iter().find(|t| t.title == "Errand").unwrap();
+        let call = rows.iter().find(|t| t.title == "Call").unwrap();
+        let deep = rows.iter().find(|t| t.title == "Deep work").unwrap();
+        assert!(errand.parent_id.is_none());
+        assert_eq!(call.parent_id.as_deref(), Some("tag-errand"));
+        assert!(deep.parent_id.is_none());
+        assert_eq!(deep.shortcut.as_deref(), Some("D"));
     }
 
     #[tokio::test]

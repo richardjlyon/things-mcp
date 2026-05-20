@@ -6,13 +6,14 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
-use crate::core::types::{Area, Project, TodoSummary};
+use crate::core::types::{Area, Project, Tag, TodoSummary};
 use crate::state::AppState;
 use crate::tools::lists::{
     things_list_anytime, things_list_areas, things_list_inbox, things_list_logbook,
-    things_list_projects, things_list_someday, things_list_today, things_list_trash,
-    things_list_upcoming, ListAnytimeArgs, ListAreasArgs, ListInboxArgs, ListLogbookArgs,
-    ListProjectsArgs, ListSomedayArgs, ListTodayArgs, ListTrashArgs, ListUpcomingArgs,
+    things_list_projects, things_list_someday, things_list_tags, things_list_today,
+    things_list_trash, things_list_upcoming, ListAnytimeArgs, ListAreasArgs,
+    ListInboxArgs, ListLogbookArgs, ListProjectsArgs, ListSomedayArgs, ListTagsArgs,
+    ListTodayArgs, ListTrashArgs, ListUpcomingArgs,
 };
 
 #[derive(Clone)]
@@ -202,6 +203,26 @@ impl ThingsServer {
         Parameters(args): Parameters<ListProjectsArgs>,
     ) -> Result<Json<Vec<Project>>, McpError> {
         let rows = things_list_projects(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(rows))
+    }
+
+    #[tool(
+        name = "things_list_tags",
+        description = "Return all tags. Each carries `parent_id` so callers can rebuild the hierarchy. Read-only.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn tool_list_tags(
+        &self,
+        Parameters(args): Parameters<ListTagsArgs>,
+    ) -> Result<Json<Vec<Tag>>, McpError> {
+        let rows = things_list_tags(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(rows))
