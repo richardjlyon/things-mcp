@@ -1,13 +1,7 @@
-//! `Operation` — typed write operations, each capable of rendering itself
-//! as a single Things JSON URL operation element.
+//! `AddTodoSpec` and its JSON render. One variant of `Operation`.
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum Operation {
-    AddTodo(AddTodoSpec),
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AddTodoSpec {
@@ -27,32 +21,7 @@ pub struct AddTodoSpec {
     pub heading_id: Option<String>,
 }
 
-impl Operation {
-    /// Stable snake-case action name surfaced in `WriteOutcome.action`.
-    pub fn action_name(&self) -> &'static str {
-        match self {
-            Operation::AddTodo(_) => "add_todo",
-        }
-    }
-
-    /// `true` iff this operation type needs Things' auth-token (i.e. it's an
-    /// `update`). Creates pass through without one.
-    pub fn requires_auth_token(&self) -> bool {
-        match self {
-            Operation::AddTodo(_) => false,
-        }
-    }
-
-    /// Render this operation as a single element of the JSON array payload
-    /// Things expects in `things:///json?data=…`.
-    pub fn render_json(&self) -> Value {
-        match self {
-            Operation::AddTodo(spec) => render_add_todo(spec),
-        }
-    }
-}
-
-fn render_add_todo(spec: &AddTodoSpec) -> Value {
+pub(crate) fn render_add_todo(spec: &AddTodoSpec) -> Value {
     let mut attributes = serde_json::Map::new();
     attributes.insert("title".into(), Value::String(spec.title.clone()));
     if let Some(notes) = spec.notes.as_ref() {
@@ -102,6 +71,7 @@ fn render_add_todo(spec: &AddTodoSpec) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::writer::operation::Operation;
 
     #[test]
     fn add_todo_minimal_renders_title_only() {
@@ -112,7 +82,6 @@ mod tests {
         let v = op.render_json();
         assert_eq!(v["type"], "to-do");
         assert_eq!(v["attributes"]["title"], "Buy milk");
-        // No spurious keys for empty options.
         let attrs = v["attributes"].as_object().unwrap();
         assert_eq!(attrs.len(), 1);
         assert!(!attrs.contains_key("notes"));
