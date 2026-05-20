@@ -244,6 +244,43 @@ pub async fn list_anytime(
     attach_tags(pool, rows).await
 }
 
+pub struct ListSomedayParams {
+    pub limit: u32,
+}
+
+impl Default for ListSomedayParams {
+    fn default() -> Self {
+        Self { limit: 200 }
+    }
+}
+
+pub async fn list_someday(
+    pool: &ReaderPool,
+    params: ListSomedayParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        WHERE t.trashed = 0
+          AND t.type = 0
+          AND t.status = 0
+          AND t.start = 2
+        ORDER BY t.userModificationDate DESC
+        LIMIT ?1
+        "#,
+    );
+    let limit = params.limit as i64;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map([limit], row_to_summary)?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 /// Helper used by every list query that returns `TodoSummary` rows.
 async fn attach_tags(
     pool: &ReaderPool,
@@ -415,6 +452,18 @@ mod tests {
         assert!(titles.contains(&"Read RFC 9457"));
         // todo-upcoming-dl has area=area-1 directly.
         assert!(titles.contains(&"Upcoming deadlined item"));
+    }
+
+    #[tokio::test]
+    async fn list_someday_returns_start_2_items() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_someday(&pool, ListSomedayParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert_eq!(rows.len(), 1);
+        assert!(titles.contains(&"Read research papers"));
     }
 
     #[tokio::test]

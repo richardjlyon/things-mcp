@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::core::reader::queries::{list_inbox, list_today, ListInboxParams, ListTodayParams};
 use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
 use crate::core::reader::queries::{list_anytime, ListAnytimeParams};
+use crate::core::reader::queries::{list_someday, ListSomedayParams};
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
@@ -94,5 +95,23 @@ pub async fn things_list_anytime(
         limit: args.limit.unwrap_or(200),
     };
     let rows = list_anytime(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListSomedayArgs {
+    /// Cap on returned rows. Defaults to 200.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_someday(
+    state: AppState,
+    args: ListSomedayArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListSomedayParams {
+        limit: args.limit.unwrap_or(200),
+    };
+    let rows = list_someday(&state.pool, params).await?;
     Ok(rows)
 }
