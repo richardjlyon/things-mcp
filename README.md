@@ -2,7 +2,7 @@
 
 A local-first MCP server, written in Rust, bridging Claude (Claude Code on the Mac and Claude.ai's Cowork sandbox) to a live Things 3 instance.
 
-**Status:** Plan 1 — foundation + `things_list_inbox` over stdio. See `docs/superpowers/plans/` for the active plan and follow-ons.
+**Status:** Plan 2 — full read surface (`inbox`/`today`/`upcoming`/`anytime`/`someday`/`logbook`/`trash`/`areas`/`projects`/`tags`/`get_todo`/`get_project`/`list_by_tag`) over stdio. See `docs/superpowers/plans/` for the active plan and follow-ons.
 
 **Quick start (stdio, Claude Code on the Mac):**
 
