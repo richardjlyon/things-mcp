@@ -1839,9 +1839,8 @@ pub mod lists;
 //! `#[tool_router]` and each delegates to a `tools::*` function. Outputs are
 //! returned as `Json<T>` — `rmcp` serialises and emits the structured payload.
 
-use rmcp::handler::server::router::tool::ToolRouter;
-use rmcp::handler::server::tool::Parameters;
-use rmcp::model::{Implementation, ProtocolVersion, ServerCapabilities, ServerInfo};
+use rmcp::handler::server::wrapper::Parameters;
+use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
 use crate::core::types::TodoSummary;
@@ -1851,20 +1850,23 @@ use crate::tools::lists::{things_list_inbox, ListInboxArgs};
 #[derive(Clone)]
 pub struct ThingsServer {
     pub state: AppState,
-    tool_router: ToolRouter<Self>,
 }
 
 #[tool_router]
 impl ThingsServer {
     pub fn new(state: AppState) -> Self {
-        Self { state, tool_router: Self::tool_router() }
+        Self { state }
     }
 
     #[tool(
         name = "things_list_inbox",
         description = "Return to-dos in the Things Inbox. Read-only.",
-        annotations(read_only_hint = true, destructive_hint = false,
-                    idempotent_hint = true, open_world_hint = false)
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
     )]
     async fn tool_list_inbox(
         &self,
@@ -1881,15 +1883,8 @@ impl ThingsServer {
 #[tool_handler]
 impl ServerHandler for ThingsServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::default(),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "things-mcp".into(),
-                version: env!("CARGO_PKG_VERSION").into(),
-            },
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("things-mcp", env!("CARGO_PKG_VERSION")))
     }
 }
 ```
@@ -1914,7 +1909,7 @@ pub mod tools;
 cargo build
 ```
 
-Expected: clean. The API names (`#[tool_router]`, `#[tool_handler]`, `Parameters<T>`, `Json<T>`, `ToolRouter<Self>`, `ErrorData as McpError`) are verified against rmcp 1.7.0 and match the established `zotero-connector` patterns.
+Expected: clean. The API names (`#[tool_router]`, `#[tool_handler]`, `Parameters<T>` from `rmcp::handler::server::wrapper`, `Json<T>`, `ErrorData as McpError`) are verified against rmcp 1.7 and match the established `zotero-connector` patterns. Note: `#[tool_router]` handles registration internally — `ThingsServer` does **not** carry a `tool_router: ToolRouter<Self>` field. `ServerInfo` and `Implementation` are `#[non_exhaustive]` in 1.7, so use the builder form (`ServerInfo::new(caps).with_server_info(Implementation::new(name, version))`) rather than struct-literal construction.
 
 - [ ] **Step 6: Commit**
 
@@ -1941,8 +1936,6 @@ git commit -m "server: ThingsServer + things_list_inbox tool wired to AppState"
 //!
 //! This deliberately tests the library API (one rung below the MCP transport
 //! layer) — the MCP wiring is a thin shim verified manually via Claude Code.
-
-use std::path::PathBuf;
 
 use things_mcp::core::reader::fixture::build_fixture;
 use things_mcp::state::{AppState, AppStateOptions};
