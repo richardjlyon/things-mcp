@@ -91,7 +91,7 @@ mod tests {
             .with_conn(|c| c.query_row("SELECT COUNT(*) FROM TMTask", [], |r| r.get(0)))
             .await
             .unwrap();
-        assert_eq!(n, 5);
+        assert_eq!(n, 15);
     }
 
     #[tokio::test]
