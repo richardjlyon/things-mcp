@@ -10,7 +10,11 @@ use std::sync::Arc;
 use crate::core::{
     backup,
     config::{self, Config},
-    reader::{pool::ReaderPool, schema},
+    reader::{
+        fts::{self, FtsCapability},
+        pool::ReaderPool,
+        schema,
+    },
 };
 
 #[derive(Clone)]
@@ -20,6 +24,7 @@ pub struct AppState {
     pub pool: ReaderPool,
     pub test_db_mode: bool,
     pub allow_writes_on_test_db: bool,
+    pub fts: Option<FtsCapability>,
 }
 
 pub struct AppStateOptions {
@@ -61,12 +66,25 @@ impl AppState {
         }
 
         let pool = ReaderPool::new(db_path.clone(), 4).await?;
+        let fts = pool
+            .with_conn(|c| fts::detect(c))
+            .await
+            .unwrap_or(None);
+        match &fts {
+            Some(cap) => tracing::info!(
+                "FTS5 capability: detected (table={}, columns={:?})",
+                cap.table,
+                cap.columns
+            ),
+            None => tracing::info!("FTS5 capability: not detected; search uses LIKE fallback"),
+        }
         Ok(Self {
             config: Arc::new(cfg),
             db_path,
             pool,
             test_db_mode,
             allow_writes_on_test_db: opts.allow_writes_on_test_db,
+            fts,
         })
     }
 }
