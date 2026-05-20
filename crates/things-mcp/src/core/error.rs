@@ -42,6 +42,12 @@ pub enum ThingsError {
         payload: serde_json::Value,
     },
 
+    #[error("write executor failed: {message}")]
+    ExecutorFailed {
+        #[serde(rename = "source")]
+        message: String,
+    },
+
     #[error("Things rejected the auth-token (writes will not succeed)")]
     AuthTokenRejected,
 
@@ -59,6 +65,9 @@ pub enum ThingsError {
 
     #[error("sqlite: {0}")]
     Sqlite(String),
+
+    #[error("writes refused in test-DB mode (set THINGS_MCP_ALLOW_WRITES_ON_TEST_DB=1 to allow dry-run writes)")]
+    TestDbWriteForbidden,
 }
 
 impl From<std::io::Error> for ThingsError {
@@ -96,5 +105,22 @@ mod tests {
         let v = serde_json::to_value(&err).unwrap();
         assert_eq!(v["kind"], "schema_incompatible");
         assert_eq!(v["missing"][0], "TMTask.uuid");
+    }
+
+    #[test]
+    fn test_db_write_forbidden_serialises_to_tagged_json() {
+        let err = ThingsError::TestDbWriteForbidden;
+        let v = serde_json::to_value(&err).unwrap();
+        assert_eq!(v["kind"], "test_db_write_forbidden");
+    }
+
+    #[test]
+    fn executor_failed_carries_source() {
+        let err = ThingsError::ExecutorFailed {
+            message: "spawn: ENOENT".into(),
+        };
+        let v = serde_json::to_value(&err).unwrap();
+        assert_eq!(v["kind"], "executor_failed");
+        assert_eq!(v["source"], "spawn: ENOENT");
     }
 }
