@@ -15,6 +15,11 @@ use crate::core::{
         pool::ReaderPool,
         schema,
     },
+    writer::{
+        executor::{Executor, OpenCommandExecutor},
+        secret::SecretString,
+        writer::{SafetyMode, Writer, WriterCfg},
+    },
 };
 
 #[derive(Clone)]
@@ -25,6 +30,7 @@ pub struct AppState {
     pub test_db_mode: bool,
     pub allow_writes_on_test_db: bool,
     pub fts: Option<FtsCapability>,
+    pub writer: Arc<Writer>,
 }
 
 pub struct AppStateOptions {
@@ -32,6 +38,9 @@ pub struct AppStateOptions {
     pub home_dir: PathBuf,
     pub config_path: PathBuf,
     pub allow_writes_on_test_db: bool,
+    /// Test-only: inject a `RecordingExecutor` (or any other) in place of the
+    /// production `OpenCommandExecutor`. `None` in production code paths.
+    pub executor_override: Option<Arc<dyn Executor>>,
 }
 
 impl AppState {
@@ -78,6 +87,37 @@ impl AppState {
             ),
             None => tracing::info!("FTS5 capability: not detected; search uses LIKE fallback"),
         }
+        let executor: Arc<dyn Executor> = opts
+            .executor_override
+            .clone()
+            .unwrap_or_else(|| Arc::new(OpenCommandExecutor));
+
+        let safety = if test_db_mode {
+            if opts.allow_writes_on_test_db {
+                SafetyMode::DryRun
+            } else {
+                SafetyMode::Forbidden
+            }
+        } else {
+            SafetyMode::Live
+        };
+
+        let auth = std::env::var("THINGS_AUTH_TOKEN")
+            .ok()
+            .or_else(|| cfg.things.auth_token.clone())
+            .map(SecretString::new);
+
+        let writer = Arc::new(Writer {
+            executor,
+            pool: pool.clone(),
+            auth,
+            cfg: WriterCfg {
+                poll_timeout: std::time::Duration::from_millis(cfg.writer.poll_timeout_ms),
+                poll_interval: std::time::Duration::from_millis(cfg.writer.poll_interval_ms),
+            },
+            safety,
+        });
+
         Ok(Self {
             config: Arc::new(cfg),
             db_path,
@@ -85,6 +125,7 @@ impl AppState {
             test_db_mode,
             allow_writes_on_test_db: opts.allow_writes_on_test_db,
             fts,
+            writer,
         })
     }
 }

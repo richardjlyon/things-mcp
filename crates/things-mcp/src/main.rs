@@ -49,6 +49,7 @@ async fn main() -> anyhow::Result<()> {
         home_dir: home,
         config_path: cfg_path,
         allow_writes_on_test_db: allow_writes,
+        executor_override: None,
     })
     .await?;
 
