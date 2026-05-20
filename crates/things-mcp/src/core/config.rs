@@ -151,7 +151,9 @@ fn glob_first_match(pattern: &Path) -> anyhow::Result<Option<PathBuf>> {
     let star_idx = s
         .find('*')
         .ok_or_else(|| anyhow::anyhow!("pattern has no '*'"))?;
-    let last_sep_before_star = s[..star_idx].rfind('/').unwrap();
+    let last_sep_before_star = s[..star_idx]
+        .rfind('/')
+        .ok_or_else(|| anyhow::anyhow!("glob pattern has no '/' before '*'"))?;
     let next_sep_after_star = star_idx + s[star_idx..].find('/').unwrap_or(s.len() - star_idx);
     let parent = PathBuf::from(&s[..last_sep_before_star]);
     let prefix = &s[last_sep_before_star + 1..star_idx];
