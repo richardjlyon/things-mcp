@@ -112,6 +112,71 @@ impl Config {
     }
 }
 
+/// Where Things keeps its SQLite under the macOS Group Container.
+const GROUP_CONTAINER_GLOB: &str =
+    "Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-*/Things Database.thingsdatabase/main.sqlite";
+
+/// Resolve the live Things DB path using the three-tier precedence from the spec:
+/// 1. `THINGS_DB_PATH` env var (or explicit override)
+/// 2. cached path in `config.toml [things].db_path` if it still exists on disk
+/// 3. glob over `~/Library/Group Containers/.../ThingsData-*/...`
+///
+/// On a successful glob fallback the resolved path is written back to `config`
+/// so subsequent starts skip the glob. Returns `Ok((path, was_cache_hit))`.
+pub fn resolve_db_path(
+    cfg: &mut Config,
+    env_override: Option<&Path>,
+    home_dir: &Path,
+) -> anyhow::Result<(PathBuf, bool)> {
+    if let Some(path) = env_override {
+        return Ok((path.to_path_buf(), false));
+    }
+    if let Some(cached) = cfg.things.db_path.as_ref() {
+        if cached.exists() {
+            return Ok((cached.clone(), true));
+        }
+        tracing::warn!("cached Things DB path {:?} missing; re-globbing", cached);
+    }
+    let pattern = home_dir.join(GROUP_CONTAINER_GLOB);
+    let resolved = glob_first_match(&pattern)?
+        .ok_or_else(|| anyhow::anyhow!("Things SQLite not found under {}", pattern.display()))?;
+    cfg.things.db_path = Some(resolved.clone());
+    Ok((resolved, false))
+}
+
+fn glob_first_match(pattern: &Path) -> anyhow::Result<Option<PathBuf>> {
+    // Hand-rolled single-level glob: split on the only `*` segment, readdir
+    // the parent, return the first match that satisfies the trailing suffix.
+    let s = pattern.to_string_lossy().to_string();
+    let star_idx = s
+        .find('*')
+        .ok_or_else(|| anyhow::anyhow!("pattern has no '*'"))?;
+    let last_sep_before_star = s[..star_idx].rfind('/').unwrap();
+    let next_sep_after_star = star_idx + s[star_idx..].find('/').unwrap_or(s.len() - star_idx);
+    let parent = PathBuf::from(&s[..last_sep_before_star]);
+    let prefix = &s[last_sep_before_star + 1..star_idx];
+    let suffix_in_segment = &s[star_idx + 1..next_sep_after_star];
+    let trailing = &s[next_sep_after_star..];
+
+    if !parent.exists() {
+        return Ok(None);
+    }
+    for entry in std::fs::read_dir(&parent)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(prefix) && name.ends_with(suffix_in_segment) {
+            let candidate = parent
+                .join(name.as_ref())
+                .join(trailing.trim_start_matches('/'));
+            if candidate.exists() {
+                return Ok(Some(candidate));
+            }
+        }
+    }
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +208,59 @@ mod tests {
         );
         assert_eq!(loaded.things.auth_token.as_deref(), Some("abc123"));
         assert_eq!(loaded.backup.retain, 5);
+    }
+
+    #[test]
+    fn env_override_wins() {
+        let mut cfg = Config::default();
+        let tmp = tempdir().unwrap();
+        let override_path = tmp.path().join("custom.sqlite");
+        std::fs::write(&override_path, b"").unwrap();
+        let (p, hit) = resolve_db_path(&mut cfg, Some(&override_path), tmp.path()).unwrap();
+        assert_eq!(p, override_path);
+        assert!(!hit);
+        // env override never populates the cache
+        assert!(cfg.things.db_path.is_none());
+    }
+
+    #[test]
+    fn cached_path_hit_when_file_exists() {
+        let tmp = tempdir().unwrap();
+        let real = tmp.path().join("real.sqlite");
+        std::fs::write(&real, b"").unwrap();
+        let mut cfg = Config::default();
+        cfg.things.db_path = Some(real.clone());
+        let (p, hit) = resolve_db_path(&mut cfg, None, tmp.path()).unwrap();
+        assert_eq!(p, real);
+        assert!(hit);
+    }
+
+    #[test]
+    fn glob_fallback_populates_cache() {
+        let tmp = tempdir().unwrap();
+        let group = tmp.path().join("Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-deadbeef/Things Database.thingsdatabase");
+        std::fs::create_dir_all(&group).unwrap();
+        let db = group.join("main.sqlite");
+        std::fs::write(&db, b"").unwrap();
+        let mut cfg = Config::default();
+        let (p, hit) = resolve_db_path(&mut cfg, None, tmp.path()).unwrap();
+        assert_eq!(p, db);
+        assert!(!hit);
+        assert_eq!(cfg.things.db_path.as_deref(), Some(db.as_path()));
+    }
+
+    #[test]
+    fn stale_cache_triggers_reglob() {
+        let tmp = tempdir().unwrap();
+        let group = tmp.path().join("Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/ThingsData-feedface/Things Database.thingsdatabase");
+        std::fs::create_dir_all(&group).unwrap();
+        let real = group.join("main.sqlite");
+        std::fs::write(&real, b"").unwrap();
+        let mut cfg = Config::default();
+        cfg.things.db_path = Some(PathBuf::from("/does/not/exist.sqlite"));
+        let (p, hit) = resolve_db_path(&mut cfg, None, tmp.path()).unwrap();
+        assert_eq!(p, real);
+        assert!(!hit);
+        assert_eq!(cfg.things.db_path.as_deref(), Some(real.as_path()));
     }
 }
