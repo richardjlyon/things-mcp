@@ -123,6 +123,78 @@ pub async fn list_today(
     attach_tags(pool, rows).await
 }
 
+pub struct ListUpcomingParams {
+    pub from_iso: Option<String>,
+    pub to_iso: Option<String>,
+    pub limit: u32,
+}
+
+impl Default for ListUpcomingParams {
+    fn default() -> Self {
+        Self {
+            from_iso: None,
+            to_iso: None,
+            limit: 200,
+        }
+    }
+}
+
+pub async fn list_upcoming(
+    pool: &ReaderPool,
+    params: ListUpcomingParams,
+) -> Result<Vec<TodoSummary>, ThingsError> {
+    use crate::core::reader::dates::{pack_things_date, parse_iso_date, today_packed_utc};
+
+    let lower = match params.from_iso.as_deref() {
+        None => today_packed_utc(),
+        Some(s) => parse_iso_date(s)
+            .map(|(y, m, d)| pack_things_date(y, m, d))
+            .ok_or_else(|| ThingsError::InvalidInput {
+                field: "from".into(),
+                reason: format!("expected YYYY-MM-DD, got {s:?}"),
+            })?,
+    };
+    let upper: i64 = match params.to_iso.as_deref() {
+        None => i64::MAX,
+        Some(s) => parse_iso_date(s)
+            .map(|(y, m, d)| pack_things_date(y, m, d))
+            .ok_or_else(|| ThingsError::InvalidInput {
+                field: "to".into(),
+                reason: format!("expected YYYY-MM-DD, got {s:?}"),
+            })?,
+    };
+
+    let sql = format!(
+        r#"
+        SELECT {SUMMARY_COLS}
+        FROM TMTask AS t
+        WHERE t.trashed = 0
+          AND t.type = 0
+          AND t.status = 0
+          AND (
+                (t.startDate > 0 AND t.startDate > ?1 AND t.startDate <= ?2)
+             OR (t.deadline  > 0 AND t.deadline  > ?1 AND t.deadline  <= ?2)
+          )
+        ORDER BY
+            CASE
+                WHEN t.startDate > 0 AND t.deadline > 0 THEN MIN(t.startDate, t.deadline)
+                WHEN t.startDate > 0                    THEN t.startDate
+                ELSE t.deadline
+            END
+        LIMIT ?3
+        "#,
+    );
+    let limit = params.limit as i64;
+    let rows = pool
+        .with_conn(move |c| -> rusqlite::Result<Vec<TodoSummary>> {
+            let mut stmt = c.prepare_cached(&sql)?;
+            let iter = stmt.query_map([lower, upper, limit], row_to_summary)?;
+            iter.collect()
+        })
+        .await?;
+    attach_tags(pool, rows).await
+}
+
 /// Helper used by every list query that returns `TodoSummary` rows.
 async fn attach_tags(
     pool: &ReaderPool,
@@ -240,5 +312,41 @@ mod tests {
         assert!(titles.contains(&"Today scheduled item"));
         // Future-scheduled item must NOT be in Today.
         assert!(!titles.contains(&"Upcoming scheduled item"));
+    }
+
+    #[tokio::test]
+    async fn list_upcoming_returns_future_scheduled_and_deadlined() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        let rows = list_upcoming(&pool, ListUpcomingParams::default()).await.unwrap();
+        let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
+        assert!(titles.contains(&"Upcoming scheduled item"));
+        assert!(titles.contains(&"Upcoming deadlined item"));
+        // Today-scheduled and never-scheduled items must NOT be in Upcoming.
+        assert!(!titles.contains(&"Today scheduled item"));
+        assert!(!titles.contains(&"Read RFC 9457"));
+    }
+
+    #[tokio::test]
+    async fn list_upcoming_respects_to_bound() {
+        let tmp = tempdir().unwrap();
+        let path = tmp.path().join("p.sqlite");
+        build_fixture(&path).unwrap();
+        let pool = ReaderPool::new(path, 2).await.unwrap();
+        // to=2050-01-01 should still include the 2099-dated items? No — 2050
+        // < 2099, so they are excluded.
+        let rows = list_upcoming(
+            &pool,
+            ListUpcomingParams {
+                from_iso: None,
+                to_iso: Some("2050-01-01".to_string()),
+                limit: 200,
+            },
+        )
+        .await
+        .unwrap();
+        assert!(rows.is_empty());
     }
 }

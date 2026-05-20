@@ -4,6 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::reader::queries::{list_inbox, list_today, ListInboxParams, ListTodayParams};
+use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
 use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
@@ -44,5 +45,31 @@ pub async fn things_list_today(
         limit: args.limit.unwrap_or(200),
     };
     let rows = list_today(&state.pool, params).await?;
+    Ok(rows)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct ListUpcomingArgs {
+    /// Lower bound (exclusive) as `YYYY-MM-DD`. Defaults to today.
+    #[serde(default)]
+    pub from: Option<String>,
+    /// Upper bound (inclusive) as `YYYY-MM-DD`. If omitted, no upper bound.
+    #[serde(default)]
+    pub to: Option<String>,
+    /// Cap on returned rows. Defaults to 200.
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+pub async fn things_list_upcoming(
+    state: AppState,
+    args: ListUpcomingArgs,
+) -> anyhow::Result<Vec<TodoSummary>> {
+    let params = ListUpcomingParams {
+        from_iso: args.from,
+        to_iso: args.to,
+        limit: args.limit.unwrap_or(200),
+    };
+    let rows = list_upcoming(&state.pool, params).await?;
     Ok(rows)
 }
