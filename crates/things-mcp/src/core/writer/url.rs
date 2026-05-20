@@ -15,7 +15,7 @@ use crate::core::writer::secret::SecretString;
 /// `auth_token` is `Some` when any operation in the batch requires it
 /// (typically updates). For pure creates, pass `None`.
 pub fn build_url(ops: &[Operation], auth_token: Option<&SecretString>) -> String {
-    let payload: Vec<_> = ops.iter().map(|op| op.render_json()).collect();
+    let payload: Vec<_> = ops.iter().flat_map(|op| op.render_batch()).collect();
     let minified =
         serde_json::to_string(&payload).expect("operations always serialise to valid JSON");
     let encoded_data = urlencoding::encode(&minified);

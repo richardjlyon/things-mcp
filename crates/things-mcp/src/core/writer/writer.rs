@@ -47,7 +47,7 @@ impl Writer {
     pub async fn fire(
         &self,
         op: Operation,
-        verify_pred: VerifyPredicate,
+        verify_pred: Option<VerifyPredicate>,
     ) -> Result<WriteOutcome, ThingsError> {
         // 1. Safety gate — refuse outright before doing any work.
         if self.safety == SafetyMode::Forbidden {
@@ -82,10 +82,23 @@ impl Writer {
         let started = Instant::now();
         self.executor.open(&url).await?;
 
-        // 7. Verify by polling the reader.
+        // 7. Verify by polling the reader (or skip if None).
+        let Some(pred) = verify_pred else {
+            // No verify predicate → bulk path. Return success-with-verified=false
+            // immediately after the executor call.
+            let latency_ms = started.elapsed().as_millis() as u64;
+            return Ok(WriteOutcome {
+                id: None,
+                action: op.action_name().to_string(),
+                verified: false,
+                dry_run: false,
+                latency_ms,
+            });
+        };
+
         let outcome = verify(
             &self.pool,
-            verify_pred,
+            pred,
             self.cfg.poll_timeout,
             self.cfg.poll_interval,
         )
@@ -101,14 +114,7 @@ impl Writer {
                 dry_run: false,
                 latency_ms,
             },
-            VerifyOutcome::Timeout { .. } => WriteOutcome {
-                id: None,
-                action: op.action_name().to_string(),
-                verified: false,
-                dry_run: false,
-                latency_ms,
-            },
-            VerifyOutcome::NotFound { .. } => WriteOutcome {
+            VerifyOutcome::Timeout { .. } | VerifyOutcome::NotFound { .. } => WriteOutcome {
                 id: None,
                 action: op.action_name().to_string(),
                 verified: false,
@@ -165,7 +171,7 @@ mod tests {
     #[tokio::test]
     async fn fire_returns_test_db_write_forbidden_in_forbidden_mode() {
         let (_tmp, writer, exec) = build_writer(SafetyMode::Forbidden).await;
-        let res = writer.fire(add_op("anything"), pred("anything")).await;
+        let res = writer.fire(add_op("anything"), Some(pred("anything"))).await;
         assert!(matches!(res, Err(ThingsError::TestDbWriteForbidden)));
         // Executor must NOT have been called.
         assert!(exec.urls().is_empty());
@@ -175,7 +181,7 @@ mod tests {
     async fn fire_dry_run_short_circuits_without_calling_executor() {
         let (_tmp, writer, exec) = build_writer(SafetyMode::DryRun).await;
         let out = writer
-            .fire(add_op("Pretend to buy bread"), pred("Pretend to buy bread"))
+            .fire(add_op("Pretend to buy bread"), Some(pred("Pretend to buy bread")))
             .await
             .unwrap();
         assert!(out.dry_run);
@@ -195,7 +201,7 @@ mod tests {
         let out = writer
             .fire(
                 add_op("Definitely-not-in-fixture row"),
-                pred("Definitely-not-in-fixture row"),
+                Some(pred("Definitely-not-in-fixture row")),
             )
             .await
             .unwrap();
@@ -208,5 +214,39 @@ mod tests {
         assert!(!out.verified);
         assert_eq!(out.action, "add_todo");
         assert!(out.latency_ms >= 200, "should reach the configured timeout");
+    }
+
+    #[tokio::test]
+    async fn fire_with_none_verify_pred_skips_verify_and_returns_unverified() {
+        let (tmp, base_writer, exec) = build_writer(SafetyMode::Live).await;
+        // BulkRaw conservatively requires_auth_token=true; supply a dummy token
+        // so the auth gate doesn't fire before we reach the executor.
+        let writer = Writer {
+            auth: Some(SecretString::new("dummy-token-for-test")),
+            ..base_writer
+        };
+        let _tmp = tmp; // keep tempdir alive
+        let bulk_op = Operation::BulkRaw(crate::core::writer::operation::BulkRawSpec {
+            operations: vec![serde_json::json!({
+                "type": "to-do",
+                "attributes": {"title": "Anything"}
+            })],
+        });
+        let started = std::time::Instant::now();
+        let out = writer.fire(bulk_op, None).await.unwrap();
+        // Executor called once.
+        let urls = exec.urls();
+        assert_eq!(urls.len(), 1);
+        // No verify polling — should return well before the configured 200ms timeout.
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(150),
+            "fire(None) must skip verify and return promptly; elapsed: {:?}",
+            started.elapsed()
+        );
+        // Outcome: unverified (no predicate to verify against), not dry-run.
+        assert!(!out.verified);
+        assert!(!out.dry_run);
+        assert_eq!(out.action, "bulk_json");
+        assert!(out.id.is_none());
     }
 }

@@ -85,6 +85,6 @@ pub async fn things_add_todo(
         since_unix,
         kind: crate::core::types::TaskKind::Todo,
     };
-    let outcome = state.writer.fire(op, predicate).await?;
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
     Ok(outcome)
 }

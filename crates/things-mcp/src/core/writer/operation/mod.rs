@@ -3,6 +3,7 @@
 
 pub mod add_project;
 pub mod add_todo;
+pub mod bulk;
 pub mod move_todo;
 pub mod status_change;
 pub mod update_project;
@@ -10,6 +11,7 @@ pub mod update_todo;
 
 pub use add_project::AddProjectSpec;
 pub use add_todo::AddTodoSpec;
+pub use bulk::BulkRawSpec;
 pub use move_todo::MoveTodoSpec;
 pub use update_project::UpdateProjectSpec;
 pub use update_todo::UpdateTodoSpec;
@@ -26,6 +28,7 @@ pub enum Operation {
     CompleteTodo { id: String },
     CancelTodo { id: String },
     MoveTodo(MoveTodoSpec),
+    BulkRaw(BulkRawSpec),
 }
 
 impl Operation {
@@ -38,6 +41,7 @@ impl Operation {
             Operation::CompleteTodo { .. } => "complete_todo",
             Operation::CancelTodo { .. } => "cancel_todo",
             Operation::MoveTodo(_) => "move_todo",
+            Operation::BulkRaw(_) => "bulk_json",
         }
     }
 
@@ -50,6 +54,10 @@ impl Operation {
             Operation::CompleteTodo { .. } => true,
             Operation::CancelTodo { .. } => true,
             Operation::MoveTodo(_) => true,
+            // Conservative: bulk may carry update operations, and the chassis
+            // can't introspect the payload. Demand the token if present;
+            // the Writer's auth gate will only fire if no token is configured.
+            Operation::BulkRaw(_) => true,
         }
     }
 
@@ -62,6 +70,18 @@ impl Operation {
             Operation::CompleteTodo { id } => status_change::render_complete_todo(id),
             Operation::CancelTodo { id } => status_change::render_cancel_todo(id),
             Operation::MoveTodo(spec) => move_todo::render_move_todo(spec),
+            Operation::BulkRaw(spec) => bulk::render_bulk_first(spec),
+        }
+    }
+
+    /// Returns the full batch as multiple JSON elements. For non-bulk variants,
+    /// this is a single-element vec wrapping `render_json()`. For `BulkRaw`,
+    /// the entire `operations` vec is returned. `build_url` uses this to
+    /// compose the URL's payload array.
+    pub fn render_batch(&self) -> Vec<Value> {
+        match self {
+            Operation::BulkRaw(spec) => spec.operations.clone(),
+            _ => vec![self.render_json()],
         }
     }
 }
