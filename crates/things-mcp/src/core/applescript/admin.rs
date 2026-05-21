@@ -214,11 +214,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_move_to_root_uses_missing_value() {
+    async fn live_move_to_root_deletes_parent_property() {
         let (rec, admin) = admin(SafetyMode::Live);
         let _out = admin.move_under("Urgent", None).await.unwrap();
         let scripts = rec.scripts();
-        assert!(scripts[0].contains("set parent tag of tag \"Urgent\" to missing value"));
+        assert!(scripts[0].contains("delete parent tag of tag \"Urgent\""));
     }
 
     #[tokio::test]

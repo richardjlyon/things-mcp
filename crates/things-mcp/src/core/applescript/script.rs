@@ -79,11 +79,14 @@ pub fn render_move_tag(name: &str, new_parent: Option<&str>) -> String {
 end tell"#,
             )
         }
-        // `missing value` is AppleScript's null; assigning it promotes the
-        // tag to the root of the tag tree.
+        // Things 3 statically types the `parent tag` property as `tag` (no
+        // nullable marker in `Things.sdef`), so `set parent tag … to missing
+        // value` is rejected with a -1700 coercion error. `delete parent tag
+        // of …` is the only AppleScript form Things 3 accepts to clear the
+        // relationship — i.e., promote the tag to the root of the tag tree.
         None => format!(
             r#"tell application "Things3"
-    set parent tag of tag "{name_q}" to missing value
+    delete parent tag of tag "{name_q}"
 end tell"#,
         ),
     }
@@ -170,9 +173,14 @@ mod tests {
     }
 
     #[test]
-    fn move_tag_to_root_uses_missing_value() {
+    fn move_tag_to_root_deletes_parent_property() {
+        // Things 3 statically types `parent tag` as `tag` (no nullable marker
+        // in the sdef), so `to missing value` is rejected with a -1700
+        // coercion error. The only working form is `delete parent tag of …`,
+        // which clears the relationship.
         let s = render_move_tag("Urgent", None);
-        assert!(s.contains("set parent tag of tag \"Urgent\" to missing value"));
+        assert!(s.contains("delete parent tag of tag \"Urgent\""));
+        assert!(!s.contains("missing value"));
     }
 
     #[test]
