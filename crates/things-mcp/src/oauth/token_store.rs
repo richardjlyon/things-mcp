@@ -670,7 +670,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[cfg(feature = "oauth-full")]
     async fn tokens_survive_oauth_state_recreation() {
         use crate::oauth::{OAuthConfig, OAuthState};
         let dir = tempfile::TempDir::new().unwrap();
