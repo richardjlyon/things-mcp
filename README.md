@@ -2,7 +2,7 @@
 
 A local-first MCP server, written in Rust, that bridges Claude to a live Things 3 instance on macOS. Reads run against a read-only SQLite copy; writes go through Things' own `things:///json` URL scheme; tag-admin ops drive Things via AppleScript. No data leaves the machine.
 
-**Status:** Plan 8 shipping (v0.2.2) — 29 MCP tools over **stdio** (Claude Code) **and HTTP** (Claude.ai Cowork via OAuth 2.1 + Tailscale Funnel + launchd).
+**Status:** Plan 8 shipping (v0.2.4) — 29 MCP tools over **stdio** (Claude Code) **and HTTP** (Claude.ai Cowork via OAuth 2.1 + Tailscale Funnel + launchd).
 
 ## Quick start
 
