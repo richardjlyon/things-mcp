@@ -244,3 +244,39 @@ poll_interval_ms = 10
     assert_eq!(scripts.len(), 1);
     assert_eq!(scripts[0], render_rename_tag("Errand", "Errands"));
 }
+
+#[tokio::test]
+async fn assign_tag_rejects_empty_element_in_tags_vec() {
+    let (state, _executor, _applescript) = build_dryrun_state().await;
+    let res = things_assign_tag(
+        state,
+        TagAssignmentArgs {
+            id: "todo-1".into(),
+            tags: vec!["Errand".into(), "".into()],
+        },
+    )
+    .await;
+    let err = res.expect_err("expected InvalidInput on empty tag element");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("tags"), "error should mention the field: {msg}");
+    assert!(
+        msg.contains("empty") || msg.contains("whitespace"),
+        "error should explain the cause: {msg}"
+    );
+}
+
+#[tokio::test]
+async fn unassign_tag_rejects_whitespace_only_element_in_tags_vec() {
+    let (state, _executor, _applescript) = build_dryrun_state().await;
+    let res = things_unassign_tag(
+        state,
+        TagAssignmentArgs {
+            id: "todo-2".into(),
+            tags: vec!["   ".into()],
+        },
+    )
+    .await;
+    let err = res.expect_err("expected InvalidInput on whitespace-only tag");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("tags"), "error should mention the field: {msg}");
+}

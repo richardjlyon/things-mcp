@@ -249,6 +249,13 @@ pub async fn things_assign_tag(
         }
         .into());
     }
+    if args.tags.iter().any(|t| t.trim().is_empty()) {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "tags".into(),
+            reason: "tags must not contain empty or whitespace-only entries".into(),
+        }
+        .into());
+    }
 
     // Read-modify-write: union current tags with the requested set.
     let current = get_tags_for_task(&state.pool, args.id.clone()).await?;
@@ -290,6 +297,13 @@ pub async fn things_unassign_tag(
         return Err(crate::core::error::ThingsError::InvalidInput {
             field: "tags".into(),
             reason: "tags must be non-empty".into(),
+        }
+        .into());
+    }
+    if args.tags.iter().any(|t| t.trim().is_empty()) {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "tags".into(),
+            reason: "tags must not contain empty or whitespace-only entries".into(),
         }
         .into());
     }

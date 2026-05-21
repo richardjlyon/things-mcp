@@ -112,7 +112,9 @@ impl TagAdmin {
 
 fn truncate_first_line(s: &str, max: usize) -> String {
     let first = s.lines().next().unwrap_or("");
-    if first.len() <= max {
+    // Char-based throughout so multi-byte sequences (emoji, CJK in
+    // osascript stdout) never get split mid-codepoint.
+    if first.chars().count() <= max {
         first.to_string()
     } else {
         first.chars().take(max).collect()
@@ -234,5 +236,20 @@ mod tests {
             }
             other => panic!("expected AppleScriptFailed, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn truncate_first_line_counts_chars_not_bytes() {
+        // 5 emoji = 5 chars but 20 bytes (4 bytes each in UTF-8). With a
+        // 5-char cap, the result should be the unchanged input.
+        let input = "🏷🏷🏷🏷🏷";
+        assert_eq!(input.chars().count(), 5);
+        assert_eq!(input.len(), 20);
+        assert_eq!(truncate_first_line(input, 5), input);
+        // With a 3-char cap, the result should be 3 emoji — no byte-boundary
+        // split would panic if the byte-based check had skipped the truncate
+        // branch.
+        let out = truncate_first_line(input, 3);
+        assert_eq!(out.chars().count(), 3);
     }
 }
