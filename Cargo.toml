@@ -7,7 +7,12 @@ edition = "2021"
 version = "0.1.0"
 authors = ["Richard Lyon"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/richardjlyon/things-mcp-server"
+repository = "https://github.com/richardjlyon/things-mcp"
+homepage = "https://github.com/richardjlyon/things-mcp"
+description = "Local-first MCP server bridging Claude to Things 3 on macOS — 29 tools for read, search, write, and tag CRUD."
+keywords = ["mcp", "things", "claude", "productivity", "macos"]
+categories = ["command-line-utilities", "api-bindings"]
+readme = "README.md"
 
 [workspace.dependencies]
 anyhow = "1"
