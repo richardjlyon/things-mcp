@@ -2,7 +2,7 @@
 
 A local-first MCP server, written in Rust, bridging Claude (Claude Code on the Mac and Claude.ai's Cowork sandbox) to a live Things 3 instance.
 
-**Status:** Plan 5 — full write surface shipping over the JSON URL scheme: `things_add_todo`, `things_add_project`, `things_update_todo`, `things_update_project`, `things_complete_todo`, `things_cancel_todo`, `things_move_todo`, and the `things_bulk_json` power tool. Updates flow through the auth-token gate (`THINGS_AUTH_TOKEN` env or `[things].auth_token` in `config.toml`). Bulk skips per-element verify; all other tools poll the reader for a typed predicate (`CreateByTitle`, `UpdateById`, `StatusChange`, `MoveById`) up to `writer.poll_timeout_ms`. See `docs/superpowers/plans/` for the active plan and follow-ons.
+**Status:** Plan 6 — full tag surface shipping. Eight new tools: `things_list_tags` (now returns a `TagListing { flat, roots }` with both the flat list and a parent-child tree), `things_assign_tag` / `things_unassign_tag` (JSON URL chassis, read-modify-write through `update`+`tags`, verified via `TagOnTodoById` predicate), plus five admin tools (`things_create_tag`, `things_rename_tag`, `things_merge_tags`, `things_delete_tag`, `things_move_tag`) routed through a new `core/applescript/` driver (`osascript -e <script>`, verified by exit code). DryRun mode short-circuits both the JSON URL executor and the AppleScript driver. See `docs/superpowers/plans/` for the active plan and follow-ons.
 
 **Quick start (stdio, Claude Code on the Mac):**
 
