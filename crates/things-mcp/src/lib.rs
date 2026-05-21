@@ -6,5 +6,6 @@ pub mod http_transport;
 pub mod logging;
 pub mod oauth;
 pub mod server;
+pub mod setup;
 pub mod state;
 pub mod tools;
