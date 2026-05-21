@@ -3,7 +3,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use crate::core::reader::queries::get_todo;
+use crate::core::reader::queries::{get_tags_for_task, get_todo};
 use crate::core::types::TodoFull;
 use crate::state::AppState;
 
@@ -217,6 +217,101 @@ pub async fn things_move_todo(
     let predicate = VerifyPredicate::MoveById {
         id: args.id,
         expected_list_id: args.list_id,
+    };
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
+    Ok(outcome)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
+pub struct TagAssignmentArgs {
+    /// UUID of the to-do or project to attach/remove tags on. Names are
+    /// not accepted — pass a uuid.
+    pub id: String,
+    /// Tag titles (not uuids). Non-empty.
+    pub tags: Vec<String>,
+}
+
+pub async fn things_assign_tag(
+    state: AppState,
+    args: TagAssignmentArgs,
+) -> anyhow::Result<WriteOutcome> {
+    if args.id.trim().is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "id".into(),
+            reason: "id must be non-empty".into(),
+        }
+        .into());
+    }
+    if args.tags.is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "tags".into(),
+            reason: "tags must be non-empty".into(),
+        }
+        .into());
+    }
+
+    // Read-modify-write: union current tags with the requested set.
+    let current = get_tags_for_task(&state.pool, args.id.clone()).await?;
+    let mut merged: Vec<String> = current.clone();
+    for t in &args.tags {
+        if !merged.iter().any(|x| x == t) {
+            merged.push(t.clone());
+        }
+    }
+
+    let op = Operation::UpdateTodo(UpdateTodoSpec {
+        id: args.id.clone(),
+        tags: Some(merged),
+        ..Default::default()
+    });
+    // Verify the first requested tag landed; if Things merges them in one
+    // write (the common case), the rest landed too.
+    let predicate = VerifyPredicate::TagOnTodoById {
+        id: args.id,
+        tag: args.tags[0].clone(),
+        present: true,
+    };
+    let outcome = state.writer.fire(op, Some(predicate)).await?;
+    Ok(outcome)
+}
+
+pub async fn things_unassign_tag(
+    state: AppState,
+    args: TagAssignmentArgs,
+) -> anyhow::Result<WriteOutcome> {
+    if args.id.trim().is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "id".into(),
+            reason: "id must be non-empty".into(),
+        }
+        .into());
+    }
+    if args.tags.is_empty() {
+        return Err(crate::core::error::ThingsError::InvalidInput {
+            field: "tags".into(),
+            reason: "tags must be non-empty".into(),
+        }
+        .into());
+    }
+
+    // Read-modify-write: filter out the requested tags.
+    let current = get_tags_for_task(&state.pool, args.id.clone()).await?;
+    let to_remove: std::collections::HashSet<&str> =
+        args.tags.iter().map(|s| s.as_str()).collect();
+    let new_set: Vec<String> = current
+        .into_iter()
+        .filter(|t| !to_remove.contains(t.as_str()))
+        .collect();
+
+    let op = Operation::UpdateTodo(UpdateTodoSpec {
+        id: args.id.clone(),
+        tags: Some(new_set),
+        ..Default::default()
+    });
+    let predicate = VerifyPredicate::TagOnTodoById {
+        id: args.id,
+        tag: args.tags[0].clone(),
+        present: false,
     };
     let outcome = state.writer.fire(op, Some(predicate)).await?;
     Ok(outcome)
