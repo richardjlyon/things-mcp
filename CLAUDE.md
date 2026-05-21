@@ -22,4 +22,6 @@
 
 ## Reference repo
 
-`zotero-connector` (`/Users/rjl/Code/github/zotero-connector`) implements the same dual-transport / OAuth / launchd / Tailscale-Funnel pattern this server will adopt in Plans 8 and 9. Mirror its conventions; do not deviate without writing it down first.
+`zotero-connector` (`/Users/rjl/Code/github/zotero-connector`) implements the same dual-transport / OAuth / launchd / Tailscale-Funnel pattern this server adopted in Plan 8. Mirror its conventions; do not deviate without writing it down first.
+
+**Mirror tax.** The Plan 8 modules (`bearer.rs`, `oauth.rs`, `oauth/token_store.rs`, `http_transport.rs`, `setup.rs`) are inline copies of zotero-mcp's, by deliberate choice — no shared library extraction (pinned principle). The cost: any fix to one of those modules MUST be cherry-picked to the sister repo in the same session, or the repos silently drift. We discovered this the hard way with the `/.well-known/openid-configuration` alias in v0.2.1.
