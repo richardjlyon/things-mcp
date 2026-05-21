@@ -2,14 +2,16 @@
 
 A local-first MCP server, written in Rust, that bridges Claude to a live Things 3 instance on macOS. Reads run against a read-only SQLite copy; writes go through Things' own `things:///json` URL scheme; tag-admin ops drive Things via AppleScript. No data leaves the machine.
 
-**Status:** Plan 8 shipping (v0.2.0) — 29 MCP tools over **stdio** (Claude Code) **and HTTP** (Claude.ai Cowork via OAuth 2.1 + Tailscale Funnel + launchd).
+**Status:** Plan 8 shipping (v0.2.2) — 29 MCP tools over **stdio** (Claude Code) **and HTTP** (Claude.ai Cowork via OAuth 2.1 + Tailscale Funnel + launchd).
 
 ## Quick start
 
 ```bash
-cargo install --path crates/things-mcp
-claude mcp add things-mcp $(which things-mcp)
+cargo install things-mcp                            # from crates.io
+claude mcp add things-mcp $(which things-mcp)       # register with Claude Code (stdio)
 ```
+
+Hacking on the source instead? Use `cargo install --path crates/things-mcp` from the repo root.
 
 For tools that mutate to-dos through the JSON URL scheme (`things_add_todo`, `things_update_todo`, the assign/unassign pair, etc.), pass the auth token at registration time:
 
@@ -133,18 +135,49 @@ Advanced ▸ Client Secret    <generated>
 Health-check after install:
 
 ```bash
-things-mcp status         # launchd + HTTP listener + Funnel + Things 3 + oauth.toml
-things-mcp show-credentials   # reprint the connector values
+things-mcp status              # launchd + HTTP listener + Funnel + Things 3 + oauth.toml
+things-mcp show-credentials    # reprint the connector values
 ```
+
+**Enable writes from Cowork.** The launchd-managed binary doesn't see your shell's environment, so passing `THINGS_AUTH_TOKEN` via `--env` (the stdio recipe) won't work. Put the token in `config.toml` under `[things]` instead:
+
+```toml
+# ~/Library/Application Support/dev.things-mcp.things-mcp/config.toml
+[things]
+auth_token = "<token from Things 3 → Settings → General → 'Enable Things URLs' → Manage>"
+```
+
+Then `launchctl kickstart -k gui/$(id -u)/com.things-mcp.http` to reload. Without this, read-only tools work fine from Cowork but `things_add_todo` / `things_update_todo` / `things_assign_tag` etc. will respond with `missing Things auth-token`.
 
 Under the hood:
 
 - **Streamable-HTTP MCP** via `rmcp::StreamableHttpService` bound to `127.0.0.1:7892`.
 - **Tailscale Funnel** publishes that loopback service at an HTTPS URL. Tailscale terminates TLS; Funnel limits inbound to your tailnet plus Claude.ai's known egress.
-- **OAuth 2.1 + PKCE** in front of `/mcp`. Tokens are SHA-256 hashed at rest under `~/Library/Application Support/dev.things-mcp.things-mcp/` (mode 0600). Default TTLs: 7-day access, 90-day refresh.
+- **OAuth 2.1 + PKCE** in front of `/mcp`. Discovery is served at both `/.well-known/oauth-authorization-server` (RFC 8414) and `/.well-known/openid-configuration` (OIDC alias — required by Claude.ai's connector when the issuer URL has a path component). Tokens are SHA-256 hashed at rest under `~/Library/Application Support/dev.things-mcp.things-mcp/` (mode 0600). Default TTLs: 7-day access, 90-day refresh.
 - **launchd plist** (`com.things-mcp.http`) keeps the HTTP server alive across reboots; logs to `~/Library/Logs/things-mcp/`.
 
 The same 29 tools — same handlers, same safety gates, same DryRun mode — are served over both transports.
+
+### Running alongside another MCP server on the same Mac
+
+Tailscale Funnel gives you one public hostname per machine on port 443, so two MCP servers on the same machine collide if both want `https://<host>/mcp`. `things-mcp setup` assumes single-tenant and will overwrite a sibling's Funnel mapping when invoked.
+
+The current workaround is path-based routing on port 443, configured by hand after `things-mcp setup`:
+
+```bash
+# Mount things-mcp under /things-mcp on the shared :443 Funnel, alongside
+# whatever already occupies "/":
+tailscale serve --bg --https=443 --set-path=/things-mcp http://localhost:7892
+tailscale funnel --bg --https=443 <port-of-the-server-at-root>   # re-enable Funnel
+```
+
+Then edit the issuer in `~/Library/Application Support/dev.things-mcp.things-mcp/oauth.toml` to include the path:
+
+```toml
+issuer = "https://<machine>.<tailnet>.ts.net/things-mcp"
+```
+
+…and `launchctl kickstart -k gui/$(id -u)/com.things-mcp.http`. The connector URL in Claude.ai then becomes `https://<machine>.<tailnet>.ts.net/things-mcp/mcp`. A `--path-prefix` flag on `things-mcp setup` is queued for a follow-up plan so this becomes first-class.
 
 ## Configuration
 
@@ -153,7 +186,7 @@ The same 29 tools — same handlers, same safety gates, same DryRun mode — are
 ```toml
 [things]
 db_path = "/Users/<you>/Library/Group Containers/JLMPQHK86H.com.culturedcode.ThingsMac/Things Database.thingsdatabase/main.sqlite"
-# auth_token = "..."  # optional; alternative to THINGS_AUTH_TOKEN env var
+# auth_token = "..."  # required for writes; stdio path can also pass THINGS_AUTH_TOKEN via env (HTTP/launchd path cannot)
 
 [backup]
 retain = 10
