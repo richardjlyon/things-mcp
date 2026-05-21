@@ -2,7 +2,7 @@
 
 A local-first MCP server, written in Rust, that bridges Claude to a live Things 3 instance on macOS. Reads run against a read-only SQLite copy; writes go through Things' own `things:///json` URL scheme; tag-admin ops drive Things via AppleScript. No data leaves the machine.
 
-**Status:** Plan 6 shipping — 29 MCP tools across read, search, write, and tag CRUD. stdio transport only. HTTP / Tailscale-Funnel transport for Claude.ai Cowork is designed (Plan 8) but not yet implemented.
+**Status:** Plan 8 shipping (v0.2.0) — 29 MCP tools over **stdio** (Claude Code) **and HTTP** (Claude.ai Cowork via OAuth 2.1 + Tailscale Funnel + launchd).
 
 ## Quick start
 
@@ -114,21 +114,37 @@ A few high-leverage prompts the tools combine well on:
 - **Tag tree spring-clean.** *"Show me my tag tree. Where do you see duplicates or orphans?"* — `things_list_tags` returns the tree; Claude proposes merges; you approve each. Then `things_merge_tags` per pair.
 - **Triage at the end of a project.** *"Find every open to-do tagged 'Q3-launch'. For each, tell me the project and any deadline."* — `things_list_by_tag` then per-item context. Optionally `things_unassign_tag` to clean up, or `things_delete_tag` once empty.
 
-## HTTP / Tailscale-Funnel transport (Plan 8 — not yet shipped)
+## HTTP / Tailscale-Funnel transport (Claude.ai Cowork)
 
-The current binary speaks **stdio MCP only** and runs as a child process of Claude Code on the same Mac. That's sufficient for the desktop CLI but doesn't reach **Claude.ai Cowork** — Anthropic's web sandbox, which sits in a VM that can't open stdio to your laptop.
+The binary defaults to **stdio MCP** for Claude Code on the same Mac. To reach **Claude.ai Cowork** — Anthropic's web sandbox, which sits in a VM that can't open stdio to your laptop — run the one-shot setup:
 
-Plan 8 will add a second transport, mirroring the design of the sibling [`zotero-connector`](https://github.com/rjlcode/zotero-connector):
+```bash
+things-mcp setup
+```
 
-- **Streamable-HTTP MCP** via `rmcp::StreamableHttpService`, bound to `127.0.0.1` only.
-- **Tailscale Funnel** publishes that loopback service at an HTTPS URL like `https://things-mcp.<tailnet>.ts.net`. Tailscale terminates TLS; Funnel limits the inbound surface to your tailnet plus Claude.ai's known egress.
-- **OAuth 2.1 + PKCE** in front of the HTTP endpoint. `things-mcp` issues a `client_id` / `client_secret` pair on first run; you paste them into Claude.ai's connector settings. The server enforces a bearer token via tower-http middleware on every request; tokens are SHA-256 hashed at rest under `~/Library/Application Support/dev.things-mcp.things-mcp/` (mode 0600). Default TTLs: 7-day access token, 90-day refresh.
-- **launchd plist** keeps the HTTP server alive across reboots and reload cycles.
-- **Setup wizard.** `things-mcp setup` will walk through: Things app detection → Funnel URL setup → launchd bootstrap → token generation → self-test. `things-mcp status` and `things-mcp show-credentials` will round out the lifecycle.
+That walks through Tailscale Funnel detection, writes the launchd plist, enables Funnel on port 7892, bootstraps OAuth 2.1 + PKCE credentials, and prints the values to paste into Claude.ai → Settings → Connectors → Add custom:
 
-The same 29 tools — same handlers, same safety gates, same DryRun mode — are served over both transports. Nothing in `core/` or `tools/` changes between Plan 6 and Plan 8; only the transport seam in `main.rs` grows a second branch.
+```text
+Server URL                  https://<your-machine>.<tailnet>.ts.net/mcp
+Advanced ▸ Client ID        things-mcp-<random>
+Advanced ▸ Client Secret    <generated>
+```
 
-Until Plan 8 lands, exercise the server via **Claude Code on the Mac**.
+Health-check after install:
+
+```bash
+things-mcp status         # launchd + HTTP listener + Funnel + Things 3 + oauth.toml
+things-mcp show-credentials   # reprint the connector values
+```
+
+Under the hood:
+
+- **Streamable-HTTP MCP** via `rmcp::StreamableHttpService` bound to `127.0.0.1:7892`.
+- **Tailscale Funnel** publishes that loopback service at an HTTPS URL. Tailscale terminates TLS; Funnel limits inbound to your tailnet plus Claude.ai's known egress.
+- **OAuth 2.1 + PKCE** in front of `/mcp`. Tokens are SHA-256 hashed at rest under `~/Library/Application Support/dev.things-mcp.things-mcp/` (mode 0600). Default TTLs: 7-day access, 90-day refresh.
+- **launchd plist** (`com.things-mcp.http`) keeps the HTTP server alive across reboots; logs to `~/Library/Logs/things-mcp/`.
+
+The same 29 tools — same handlers, same safety gates, same DryRun mode — are served over both transports.
 
 ## Configuration
 
@@ -171,7 +187,7 @@ things-mcp --db-path /path/to/test.sqlite --allow-writes-on-test-db
 ## Development
 
 ```bash
-cargo test                    # full suite (≈155 tests)
+cargo test                    # full suite (≈204 tests)
 cargo test -- --ignored       # opt-in smoke tests that touch /usr/bin/osascript
 cargo build --release         # optimized binary at target/release/things-mcp
 ```
@@ -181,7 +197,6 @@ Project layout follows the conventions in `CLAUDE.md`. Non-trivial changes start
 ## Roadmap
 
 - **Plan 7** — recurrence definition via AppleScript wrapper (the JSON URL scheme can't set recurrence rules).
-- **Plan 8** — HTTP transport + OAuth 2.1 + Tailscale Funnel + launchd plist + setup wizard. Unlocks Claude.ai Cowork.
 - **Plan 9** — stdio path consolidation and feature parity sweep.
 
 See `docs/superpowers/plans/` for the active plan and follow-ons.
