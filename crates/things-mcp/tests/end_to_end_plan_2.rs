@@ -7,11 +7,12 @@ use things_mcp::core::reader::fixture::build_fixture;
 use things_mcp::state::{AppState, AppStateOptions};
 use things_mcp::tools::lists::{
     things_list_anytime, things_list_areas, things_list_by_tag, things_list_logbook,
-    things_list_projects, things_list_someday, things_list_tags, things_list_today,
+    things_list_projects, things_list_someday, things_list_today,
     things_list_trash, things_list_upcoming, ListAnytimeArgs, ListAreasArgs, ListByTagArgs,
-    ListLogbookArgs, ListProjectsArgs, ListSomedayArgs, ListTagsArgs, ListTodayArgs,
+    ListLogbookArgs, ListProjectsArgs, ListSomedayArgs, ListTodayArgs,
     ListTrashArgs, ListUpcomingArgs,
 };
+use things_mcp::tools::tags::{things_list_tags, ListTagsArgs};
 use things_mcp::tools::projects::{things_get_project, GetProjectArgs};
 use things_mcp::tools::todos::{things_get_todo, GetTodoArgs};
 
@@ -25,6 +26,7 @@ async fn build_state() -> AppState {
         config_path: tmp.path().join("config.toml"),
         allow_writes_on_test_db: false,
         executor_override: None,
+        applescript_override: None,
     })
     .await
     .unwrap();
@@ -68,8 +70,8 @@ async fn plan_2_surface_returns_expected_shapes() {
     assert!(projects_open.iter().any(|p| p.title == "Reading list"));
 
     let tags = things_list_tags(state.clone(), ListTagsArgs::default()).await.unwrap();
-    assert_eq!(tags.len(), 3);
-    assert!(tags.iter().any(|t| t.title == "Call" && t.parent_id.as_deref() == Some("tag-errand")));
+    assert_eq!(tags.flat.len(), 3);
+    assert!(tags.flat.iter().any(|t| t.title == "Call" && t.parent_id.as_deref() == Some("tag-errand")));
 
     // Single-entity reads
     let todo = things_get_todo(

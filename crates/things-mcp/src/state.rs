@@ -8,6 +8,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::core::{
+    applescript::{
+        admin::TagAdmin,
+        driver::{AppleScriptDriver, OsascriptDriver},
+    },
     backup,
     config::{self, Config},
     reader::{
@@ -31,6 +35,7 @@ pub struct AppState {
     pub allow_writes_on_test_db: bool,
     pub fts: Option<FtsCapability>,
     pub writer: Arc<Writer>,
+    pub tag_admin: Arc<TagAdmin>,
 }
 
 pub struct AppStateOptions {
@@ -41,6 +46,9 @@ pub struct AppStateOptions {
     /// Test-only: inject a `RecordingExecutor` (or any other) in place of the
     /// production `OpenCommandExecutor`. `None` in production code paths.
     pub executor_override: Option<Arc<dyn Executor>>,
+    /// Test-only: inject a `RecordingAppleScript` (or any other) in place of
+    /// the production `OsascriptDriver`. `None` in production code paths.
+    pub applescript_override: Option<Arc<dyn AppleScriptDriver>>,
 }
 
 impl AppState {
@@ -118,6 +126,16 @@ impl AppState {
             safety,
         });
 
+        let applescript: Arc<dyn AppleScriptDriver> = opts
+            .applescript_override
+            .clone()
+            .unwrap_or_else(|| Arc::new(OsascriptDriver));
+
+        let tag_admin = Arc::new(TagAdmin {
+            driver: applescript,
+            safety,
+        });
+
         Ok(Self {
             config: Arc::new(cfg),
             db_path,
@@ -126,6 +144,7 @@ impl AppState {
             allow_writes_on_test_db: opts.allow_writes_on_test_db,
             fts,
             writer,
+            tag_admin,
         })
     }
 }

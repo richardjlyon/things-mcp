@@ -50,6 +50,7 @@ async fn main() -> anyhow::Result<()> {
         config_path: cfg_path,
         allow_writes_on_test_db: allow_writes,
         executor_override: None,
+        applescript_override: None,
     })
     .await?;
 

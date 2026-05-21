@@ -176,8 +176,6 @@ pub async fn things_list_areas(
 
 use crate::core::reader::queries::{list_projects, ListProjectsParams, ProjectStatusFilter};
 use crate::core::types::Project;
-use crate::core::reader::queries::list_tags;
-use crate::core::types::Tag;
 use crate::core::reader::queries::{list_by_tag, ListByTagParams};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, Default)]
@@ -218,17 +216,6 @@ pub async fn things_list_projects(
         status: args.status.unwrap_or_default().into(),
     };
     let rows = list_projects(&state.pool, params).await?;
-    Ok(rows)
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
-pub struct ListTagsArgs {}
-
-pub async fn things_list_tags(
-    state: AppState,
-    _args: ListTagsArgs,
-) -> anyhow::Result<Vec<Tag>> {
-    let rows = list_tags(&state.pool).await?;
     Ok(rows)
 }
 

@@ -23,6 +23,7 @@ async fn lists_inbox_against_fixture() {
         config_path: tmp.path().join("config.toml"),
         allow_writes_on_test_db: false,
         executor_override: None,
+        applescript_override: None,
     })
     .await
     .unwrap();

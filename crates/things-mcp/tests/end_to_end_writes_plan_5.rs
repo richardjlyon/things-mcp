@@ -35,6 +35,7 @@ async fn build_dryrun_state(
         config_path: tmp.path().join("config.toml"),
         allow_writes_on_test_db: true,
         executor_override: Some(recorder),
+        applescript_override: None,
     })
     .await
     .unwrap();
@@ -208,6 +209,7 @@ poll_interval_ms = 10
         config_path: config_toml,
         allow_writes_on_test_db: false,
         executor_override: Some(recorder.clone() as Arc<dyn Executor>),
+        applescript_override: None,
     })
     .await
     .unwrap();

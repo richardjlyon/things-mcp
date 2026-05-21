@@ -6,11 +6,12 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
-use crate::core::types::{Area, Project, ProjectFull, Tag, TodoFull, TodoSummary};
+use crate::core::types::{Area, Project, ProjectFull, TodoFull, TodoSummary};
 use crate::tools::todos::{
-    things_add_todo, things_cancel_todo, things_complete_todo, things_get_todo,
-    things_move_todo, things_update_todo,
-    AddTodoArgs, GetTodoArgs, MoveTodoArgs, StatusChangeArgs, UpdateTodoArgs,
+    things_add_todo, things_assign_tag, things_cancel_todo, things_complete_todo,
+    things_get_todo, things_move_todo, things_unassign_tag, things_update_todo,
+    AddTodoArgs, GetTodoArgs, MoveTodoArgs, StatusChangeArgs, TagAssignmentArgs,
+    UpdateTodoArgs,
 };
 use crate::core::writer::outcome::WriteOutcome;
 use crate::tools::projects::{
@@ -22,10 +23,17 @@ use crate::tools::search::{things_search, SearchArgs};
 use crate::state::AppState;
 use crate::tools::lists::{
     things_list_anytime, things_list_areas, things_list_by_tag, things_list_inbox,
-    things_list_logbook, things_list_projects, things_list_someday, things_list_tags,
+    things_list_logbook, things_list_projects, things_list_someday,
     things_list_today, things_list_trash, things_list_upcoming, ListAnytimeArgs,
     ListAreasArgs, ListByTagArgs, ListInboxArgs, ListLogbookArgs, ListProjectsArgs,
-    ListSomedayArgs, ListTagsArgs, ListTodayArgs, ListTrashArgs, ListUpcomingArgs,
+    ListSomedayArgs, ListTodayArgs, ListTrashArgs, ListUpcomingArgs,
+};
+use crate::core::applescript::admin::TagOutcome;
+use crate::core::reader::tags::TagListing;
+use crate::tools::tags::{
+    things_create_tag, things_delete_tag, things_list_tags, things_merge_tags,
+    things_move_tag, things_rename_tag,
+    CreateTagArgs, DeleteTagArgs, ListTagsArgs, MergeTagsArgs, MoveTagArgs, RenameTagArgs,
 };
 
 #[derive(Clone)]
@@ -222,7 +230,7 @@ impl ThingsServer {
 
     #[tool(
         name = "things_list_tags",
-        description = "Return all tags. Each carries `parent_id` so callers can rebuild the hierarchy. Read-only.",
+        description = "Return all tags. `flat` is the every-tag list; `roots` is a tree of `TagNode`s rooted at parentless tags. Read-only.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -233,11 +241,11 @@ impl ThingsServer {
     async fn tool_list_tags(
         &self,
         Parameters(args): Parameters<ListTagsArgs>,
-    ) -> Result<Json<Vec<Tag>>, McpError> {
-        let rows = things_list_tags(self.state.clone(), args)
+    ) -> Result<Json<TagListing>, McpError> {
+        let listing = things_list_tags(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
-        Ok(Json(rows))
+        Ok(Json(listing))
     }
 
     #[tool(
@@ -475,6 +483,146 @@ impl ThingsServer {
         Parameters(args): Parameters<BulkJsonArgs>,
     ) -> Result<Json<WriteOutcome>, McpError> {
         let out = things_bulk_json(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_assign_tag",
+        description = "Attach one or more tags to a to-do. Identifier is the to-do's uuid. Tags are referenced by name. Idempotent: reassigning an already-attached tag is a no-op. The implementation reads current tags and replays an `update` with the merged set; concurrent edits between the read and write may overwrite each other (≈100–300 ms window).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_assign_tag(
+        &self,
+        Parameters(args): Parameters<TagAssignmentArgs>,
+    ) -> Result<Json<WriteOutcome>, McpError> {
+        let out = things_assign_tag(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_unassign_tag",
+        description = "Detach one or more tags from a to-do. Idempotent: removing a tag that wasn't attached is a no-op. Read-modify-write through Things' `update` op; concurrent edits between the read and write may overwrite each other (≈100–300 ms window).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_unassign_tag(
+        &self,
+        Parameters(args): Parameters<TagAssignmentArgs>,
+    ) -> Result<Json<WriteOutcome>, McpError> {
+        let out = things_unassign_tag(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_create_tag",
+        description = "Create a new tag. Optionally nest it under an existing parent tag by name. Runs via AppleScript (`osascript`).",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_create_tag(
+        &self,
+        Parameters(args): Parameters<CreateTagArgs>,
+    ) -> Result<Json<TagOutcome>, McpError> {
+        let out = things_create_tag(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_rename_tag",
+        description = "Rename an existing tag globally. Every to-do that carried the old name will surface the new name. Runs via AppleScript.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_rename_tag(
+        &self,
+        Parameters(args): Parameters<RenameTagArgs>,
+    ) -> Result<Json<TagOutcome>, McpError> {
+        let out = things_rename_tag(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_merge_tags",
+        description = "Reassign every to-do tagged `source` to also carry `target`, then delete `source`. Source and target must differ. Runs via AppleScript.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_merge_tags(
+        &self,
+        Parameters(args): Parameters<MergeTagsArgs>,
+    ) -> Result<Json<TagOutcome>, McpError> {
+        let out = things_merge_tags(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_delete_tag",
+        description = "Delete a tag globally. To-dos that carry the tag stay; only the tag itself is removed. Runs via AppleScript.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_delete_tag(
+        &self,
+        Parameters(args): Parameters<DeleteTagArgs>,
+    ) -> Result<Json<TagOutcome>, McpError> {
+        let out = things_delete_tag(self.state.clone(), args)
+            .await
+            .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
+        Ok(Json(out))
+    }
+
+    #[tool(
+        name = "things_move_tag",
+        description = "Move a tag under a new parent tag (or to the root when `new_parent` is omitted/null). Runs via AppleScript.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = true
+        )
+    )]
+    async fn tool_move_tag(
+        &self,
+        Parameters(args): Parameters<MoveTagArgs>,
+    ) -> Result<Json<TagOutcome>, McpError> {
+        let out = things_move_tag(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
         Ok(Json(out))

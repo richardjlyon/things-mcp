@@ -28,6 +28,7 @@ async fn build_state(
         config_path: tmp.path().join("config.toml"),
         allow_writes_on_test_db,
         executor_override,
+        applescript_override: None,
     })
     .await
     .unwrap();
