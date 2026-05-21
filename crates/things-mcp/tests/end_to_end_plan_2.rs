@@ -43,31 +43,31 @@ async fn plan_2_surface_returns_expected_shapes() {
 
     // Lists
     let today = things_list_today(state.clone(), ListTodayArgs::default()).await.unwrap();
-    assert!(today.iter().any(|t| t.title == "Today scheduled item"));
+    assert!(today.items.iter().any(|t| t.title == "Today scheduled item"));
 
     let upcoming = things_list_upcoming(state.clone(), ListUpcomingArgs::default()).await.unwrap();
-    assert!(upcoming.iter().any(|t| t.title == "Upcoming scheduled item"));
-    assert!(upcoming.iter().any(|t| t.title == "Upcoming deadlined item"));
+    assert!(upcoming.items.iter().any(|t| t.title == "Upcoming scheduled item"));
+    assert!(upcoming.items.iter().any(|t| t.title == "Upcoming deadlined item"));
 
     let anytime = things_list_anytime(state.clone(), ListAnytimeArgs::default()).await.unwrap();
-    assert!(anytime.iter().any(|t| t.title == "Read RFC 9457"));
+    assert!(anytime.items.iter().any(|t| t.title == "Read RFC 9457"));
 
     let someday = things_list_someday(state.clone(), ListSomedayArgs::default()).await.unwrap();
-    assert!(someday.iter().any(|t| t.title == "Read research papers"));
+    assert!(someday.items.iter().any(|t| t.title == "Read research papers"));
 
     let logbook = things_list_logbook(state.clone(), ListLogbookArgs::default()).await.unwrap();
-    assert!(logbook.iter().any(|t| t.title == "Old completed"));
-    assert!(logbook.iter().any(|t| t.title == "Old canceled"));
+    assert!(logbook.items.iter().any(|t| t.title == "Old completed"));
+    assert!(logbook.items.iter().any(|t| t.title == "Old canceled"));
 
     let trash = things_list_trash(state.clone(), ListTrashArgs::default()).await.unwrap();
-    assert!(trash.iter().any(|t| t.title == "Trashed thing"));
+    assert!(trash.items.iter().any(|t| t.title == "Trashed thing"));
 
     // Areas + projects + tags
     let areas = things_list_areas(state.clone(), ListAreasArgs::default()).await.unwrap();
-    assert_eq!(areas.len(), 2);
+    assert_eq!(areas.items.len(), 2);
 
     let projects_open = things_list_projects(state.clone(), ListProjectsArgs::default()).await.unwrap();
-    assert!(projects_open.iter().any(|p| p.title == "Reading list"));
+    assert!(projects_open.items.iter().any(|p| p.title == "Reading list"));
 
     let tags = things_list_tags(state.clone(), ListTagsArgs::default()).await.unwrap();
     assert_eq!(tags.flat.len(), 3);
@@ -82,6 +82,7 @@ async fn plan_2_surface_returns_expected_shapes() {
     )
     .await
     .unwrap()
+    .todo
     .unwrap();
     assert_eq!(todo.summary.title, "Buy milk");
     assert_eq!(todo.checklist.len(), 3);
@@ -94,6 +95,7 @@ async fn plan_2_surface_returns_expected_shapes() {
     )
     .await
     .unwrap()
+    .project
     .unwrap();
     assert_eq!(project.headings.len(), 1);
     assert_eq!(project.headings[0].title, "Articles");
@@ -109,7 +111,7 @@ async fn plan_2_surface_returns_expected_shapes() {
     )
     .await
     .unwrap();
-    let titles: Vec<_> = by_tag.iter().map(|t| t.title.as_str()).collect();
+    let titles: Vec<_> = by_tag.items.iter().map(|t| t.title.as_str()).collect();
     assert!(titles.contains(&"Call the dentist"));
     assert!(titles.contains(&"Read RFC 9457"));
 }

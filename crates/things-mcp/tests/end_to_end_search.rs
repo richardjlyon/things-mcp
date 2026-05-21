@@ -40,7 +40,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    assert!(by_text.iter().any(|t| t.title == "Buy milk"));
+    assert!(by_text.items.iter().any(|t| t.title == "Buy milk"));
 
     // Status=All + completed text.
     let with_completed = things_search(
@@ -53,7 +53,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    assert!(with_completed.iter().any(|t| t.title == "Pay tax bill"));
+    assert!(with_completed.items.iter().any(|t| t.title == "Pay tax bill"));
 
     // Tag filter (OR-semantic).
     let by_tag = things_search(
@@ -65,7 +65,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    assert!(by_tag.iter().any(|t| t.title == "Call the dentist"));
+    assert!(by_tag.items.iter().any(|t| t.title == "Call the dentist"));
 
     // Area filter — todo-4 is in proj-1 (area-1).
     let by_area = things_search(
@@ -77,7 +77,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    let titles: Vec<_> = by_area.iter().map(|t| t.title.as_str()).collect();
+    let titles: Vec<_> = by_area.items.iter().map(|t| t.title.as_str()).collect();
     assert!(titles.contains(&"Read RFC 9457"));
 
     // Project filter.
@@ -90,7 +90,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    let titles: Vec<_> = by_project.iter().map(|t| t.title.as_str()).collect();
+    let titles: Vec<_> = by_project.items.iter().map(|t| t.title.as_str()).collect();
     assert!(titles.contains(&"Today scheduled item"));
     assert!(titles.contains(&"Read RFC 9457"));
 
@@ -104,7 +104,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    let titles: Vec<_> = by_due.iter().map(|t| t.title.as_str()).collect();
+    let titles: Vec<_> = by_due.items.iter().map(|t| t.title.as_str()).collect();
     assert_eq!(titles, vec!["Upcoming deadlined item"]);
 
     // Scheduled range — only the 2020-dated row.
@@ -117,7 +117,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    let titles: Vec<_> = by_sched.iter().map(|t| t.title.as_str()).collect();
+    let titles: Vec<_> = by_sched.items.iter().map(|t| t.title.as_str()).collect();
     assert!(titles.contains(&"Today scheduled item"));
     assert!(!titles.contains(&"Upcoming scheduled item"));
 
@@ -132,7 +132,7 @@ async fn search_handles_text_and_structured_filters() {
     )
     .await
     .unwrap();
-    let titles: Vec<_> = combined.iter().map(|t| t.title.as_str()).collect();
+    let titles: Vec<_> = combined.items.iter().map(|t| t.title.as_str()).collect();
     assert!(titles.contains(&"Read RFC 9457"));
     assert!(!titles.contains(&"Read research papers"));
 }

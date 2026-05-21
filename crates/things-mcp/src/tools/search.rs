@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::reader::queries::{search, SearchParams};
-use crate::core::types::TodoSummary;
+use crate::core::types::TodoList;
 use crate::state::AppState;
 use crate::tools::lists::ProjectStatusArg;
 
@@ -46,7 +46,7 @@ pub struct SearchArgs {
 pub async fn things_search(
     state: AppState,
     args: SearchArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = SearchParams {
         query: args.query,
         tags: args.tags,
@@ -59,6 +59,6 @@ pub async fn things_search(
         scheduled_after: args.scheduled_after,
         limit: args.limit.unwrap_or(50),
     };
-    let rows = search(&state.pool, params).await?;
-    Ok(rows)
+    let items = search(&state.pool, params).await?;
+    Ok(TodoList { items })
 }

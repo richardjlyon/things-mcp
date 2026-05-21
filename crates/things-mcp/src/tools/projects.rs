@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::reader::queries::get_project;
-use crate::core::types::ProjectFull;
+use crate::core::types::MaybeProject;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -16,9 +16,9 @@ pub struct GetProjectArgs {
 pub async fn things_get_project(
     state: AppState,
     args: GetProjectArgs,
-) -> anyhow::Result<Option<ProjectFull>> {
-    let full = get_project(&state.pool, args.id).await?;
-    Ok(full)
+) -> anyhow::Result<MaybeProject> {
+    let project = get_project(&state.pool, args.id).await?;
+    Ok(MaybeProject { project })
 }
 
 use std::time::{SystemTime, UNIX_EPOCH};

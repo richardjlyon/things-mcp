@@ -4,13 +4,12 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::reader::queries::{list_areas, list_inbox, list_today, ListInboxParams, ListTodayParams};
-use crate::core::types::Area;
+use crate::core::types::{AreaList, ProjectList, TodoList};
 use crate::core::reader::queries::{list_upcoming, ListUpcomingParams};
 use crate::core::reader::queries::{list_anytime, ListAnytimeParams};
 use crate::core::reader::queries::{list_someday, ListSomedayParams};
 use crate::core::reader::queries::{list_logbook, ListLogbookParams};
 use crate::core::reader::queries::{list_trash, ListTrashParams};
-use crate::core::types::TodoSummary;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -26,13 +25,13 @@ pub struct ListInboxArgs {
 pub async fn things_list_inbox(
     state: AppState,
     args: ListInboxArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListInboxParams {
         include_completed: args.include_completed.unwrap_or(false),
         limit: args.limit.unwrap_or(200),
     };
-    let rows = list_inbox(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_inbox(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -45,12 +44,12 @@ pub struct ListTodayArgs {
 pub async fn things_list_today(
     state: AppState,
     args: ListTodayArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListTodayParams {
         limit: args.limit.unwrap_or(200),
     };
-    let rows = list_today(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_today(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -69,14 +68,14 @@ pub struct ListUpcomingArgs {
 pub async fn things_list_upcoming(
     state: AppState,
     args: ListUpcomingArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListUpcomingParams {
         from_iso: args.from,
         to_iso: args.to,
         limit: args.limit.unwrap_or(200),
     };
-    let rows = list_upcoming(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_upcoming(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -92,13 +91,13 @@ pub struct ListAnytimeArgs {
 pub async fn things_list_anytime(
     state: AppState,
     args: ListAnytimeArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListAnytimeParams {
         area_id: args.area_id,
         limit: args.limit.unwrap_or(200),
     };
-    let rows = list_anytime(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_anytime(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -111,12 +110,12 @@ pub struct ListSomedayArgs {
 pub async fn things_list_someday(
     state: AppState,
     args: ListSomedayArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListSomedayParams {
         limit: args.limit.unwrap_or(200),
     };
-    let rows = list_someday(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_someday(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -135,14 +134,14 @@ pub struct ListLogbookArgs {
 pub async fn things_list_logbook(
     state: AppState,
     args: ListLogbookArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListLogbookParams {
         from_iso: args.from,
         to_iso: args.to,
         limit: args.limit.unwrap_or(100),
     };
-    let rows = list_logbook(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_logbook(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -155,12 +154,12 @@ pub struct ListTrashArgs {
 pub async fn things_list_trash(
     state: AppState,
     args: ListTrashArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListTrashParams {
         limit: args.limit.unwrap_or(100),
     };
-    let rows = list_trash(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_trash(&state.pool, params).await?;
+    Ok(TodoList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, Default)]
@@ -169,13 +168,12 @@ pub struct ListAreasArgs {}
 pub async fn things_list_areas(
     state: AppState,
     _args: ListAreasArgs,
-) -> anyhow::Result<Vec<Area>> {
-    let rows = list_areas(&state.pool).await?;
-    Ok(rows)
+) -> anyhow::Result<AreaList> {
+    let items = list_areas(&state.pool).await?;
+    Ok(AreaList { items })
 }
 
 use crate::core::reader::queries::{list_projects, ListProjectsParams, ProjectStatusFilter};
-use crate::core::types::Project;
 use crate::core::reader::queries::{list_by_tag, ListByTagParams};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, Default)]
@@ -210,13 +208,13 @@ pub struct ListProjectsArgs {
 pub async fn things_list_projects(
     state: AppState,
     args: ListProjectsArgs,
-) -> anyhow::Result<Vec<Project>> {
+) -> anyhow::Result<ProjectList> {
     let params = ListProjectsParams {
         area_id: args.area_id,
         status: args.status.unwrap_or_default().into(),
     };
-    let rows = list_projects(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_projects(&state.pool, params).await?;
+    Ok(ProjectList { items })
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -234,12 +232,12 @@ pub struct ListByTagArgs {
 pub async fn things_list_by_tag(
     state: AppState,
     args: ListByTagArgs,
-) -> anyhow::Result<Vec<TodoSummary>> {
+) -> anyhow::Result<TodoList> {
     let params = ListByTagParams {
         tag: args.tag,
         recurse: args.recurse.unwrap_or(true),
         limit: args.limit.unwrap_or(200),
     };
-    let rows = list_by_tag(&state.pool, params).await?;
-    Ok(rows)
+    let items = list_by_tag(&state.pool, params).await?;
+    Ok(TodoList { items })
 }

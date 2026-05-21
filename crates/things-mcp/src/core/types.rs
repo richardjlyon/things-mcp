@@ -148,3 +148,34 @@ pub struct WriteOutcome {
     pub dry_run: bool,
     pub latency_ms: u64,
 }
+
+// MCP outputSchema requires root type 'object', so list-returning tools wrap
+// their `Vec<…>` in a single-field struct.
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct TodoList {
+    pub items: Vec<TodoSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct AreaList {
+    pub items: Vec<Area>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ProjectList {
+    pub items: Vec<Project>,
+}
+
+// Same reason: get-single tools that may return `None` wrap the Option so the
+// outputSchema root is an object with a nullable field rather than a bare null.
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MaybeTodo {
+    pub todo: Option<TodoFull>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct MaybeProject {
+    pub project: Option<ProjectFull>,
+}

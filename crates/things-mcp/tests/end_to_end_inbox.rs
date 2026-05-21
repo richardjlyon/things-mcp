@@ -32,8 +32,8 @@ async fn lists_inbox_against_fixture() {
     let rows = things_list_inbox(state.clone(), ListInboxArgs::default())
         .await
         .unwrap();
-    let titles: Vec<_> = rows.iter().map(|r| r.title.as_str()).collect();
-    assert_eq!(rows.len(), 2);
+    let titles: Vec<_> = rows.items.iter().map(|r| r.title.as_str()).collect();
+    assert_eq!(rows.items.len(), 2);
     assert!(titles.contains(&"Buy milk"));
     assert!(titles.contains(&"Call the dentist"));
 
@@ -46,5 +46,5 @@ async fn lists_inbox_against_fixture() {
     )
     .await
     .unwrap();
-    assert_eq!(with_completed.len(), 3);
+    assert_eq!(with_completed.items.len(), 3);
 }

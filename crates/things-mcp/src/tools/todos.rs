@@ -4,7 +4,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::core::reader::queries::{get_tags_for_task, get_todo};
-use crate::core::types::TodoFull;
+use crate::core::types::MaybeTodo;
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
@@ -16,9 +16,9 @@ pub struct GetTodoArgs {
 pub async fn things_get_todo(
     state: AppState,
     args: GetTodoArgs,
-) -> anyhow::Result<Option<TodoFull>> {
-    let full = get_todo(&state.pool, args.id).await?;
-    Ok(full)
+) -> anyhow::Result<MaybeTodo> {
+    let todo = get_todo(&state.pool, args.id).await?;
+    Ok(MaybeTodo { todo })
 }
 
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -6,7 +6,7 @@ use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::{tool, tool_handler, tool_router, ErrorData as McpError, Json, ServerHandler};
 
-use crate::core::types::{Area, Project, ProjectFull, TodoFull, TodoSummary};
+use crate::core::types::{AreaList, MaybeProject, MaybeTodo, ProjectList, TodoList};
 use crate::tools::todos::{
     things_add_todo, things_assign_tag, things_cancel_todo, things_complete_todo,
     things_get_todo, things_move_todo, things_unassign_tag, things_update_todo,
@@ -60,7 +60,7 @@ impl ThingsServer {
     async fn tool_list_inbox(
         &self,
         Parameters(args): Parameters<ListInboxArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let state = self.state.clone();
         let rows = things_list_inbox(state, args)
             .await
@@ -81,7 +81,7 @@ impl ThingsServer {
     async fn tool_list_today(
         &self,
         Parameters(args): Parameters<ListTodayArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_today(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -101,7 +101,7 @@ impl ThingsServer {
     async fn tool_list_upcoming(
         &self,
         Parameters(args): Parameters<ListUpcomingArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_upcoming(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -121,7 +121,7 @@ impl ThingsServer {
     async fn tool_list_anytime(
         &self,
         Parameters(args): Parameters<ListAnytimeArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_anytime(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -141,7 +141,7 @@ impl ThingsServer {
     async fn tool_list_someday(
         &self,
         Parameters(args): Parameters<ListSomedayArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_someday(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -161,7 +161,7 @@ impl ThingsServer {
     async fn tool_list_logbook(
         &self,
         Parameters(args): Parameters<ListLogbookArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_logbook(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -181,7 +181,7 @@ impl ThingsServer {
     async fn tool_list_trash(
         &self,
         Parameters(args): Parameters<ListTrashArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_trash(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -201,7 +201,7 @@ impl ThingsServer {
     async fn tool_list_areas(
         &self,
         Parameters(args): Parameters<ListAreasArgs>,
-    ) -> Result<Json<Vec<Area>>, McpError> {
+    ) -> Result<Json<AreaList>, McpError> {
         let rows = things_list_areas(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -221,7 +221,7 @@ impl ThingsServer {
     async fn tool_list_projects(
         &self,
         Parameters(args): Parameters<ListProjectsArgs>,
-    ) -> Result<Json<Vec<Project>>, McpError> {
+    ) -> Result<Json<ProjectList>, McpError> {
         let rows = things_list_projects(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -261,7 +261,7 @@ impl ThingsServer {
     async fn tool_list_by_tag(
         &self,
         Parameters(args): Parameters<ListByTagArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_list_by_tag(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -281,7 +281,7 @@ impl ThingsServer {
     async fn tool_get_todo(
         &self,
         Parameters(args): Parameters<GetTodoArgs>,
-    ) -> Result<Json<Option<TodoFull>>, McpError> {
+    ) -> Result<Json<MaybeTodo>, McpError> {
         let res = things_get_todo(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -301,7 +301,7 @@ impl ThingsServer {
     async fn tool_get_project(
         &self,
         Parameters(args): Parameters<GetProjectArgs>,
-    ) -> Result<Json<Option<ProjectFull>>, McpError> {
+    ) -> Result<Json<MaybeProject>, McpError> {
         let res = things_get_project(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
@@ -321,7 +321,7 @@ impl ThingsServer {
     async fn tool_search(
         &self,
         Parameters(args): Parameters<SearchArgs>,
-    ) -> Result<Json<Vec<TodoSummary>>, McpError> {
+    ) -> Result<Json<TodoList>, McpError> {
         let rows = things_search(self.state.clone(), args)
             .await
             .map_err(|e| McpError::internal_error(format!("{e:#}"), None))?;
