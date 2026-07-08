@@ -26,23 +26,23 @@
 ### Task 1: Workspace skeleton + git init
 
 **Files:**
-- Create: `/Users/rjl/Code/github/things-mcp-server/.gitignore`
-- Create: `/Users/rjl/Code/github/things-mcp-server/Cargo.toml`
-- Create: `/Users/rjl/Code/github/things-mcp-server/rust-toolchain.toml`
-- Create: `/Users/rjl/Code/github/things-mcp-server/crates/things-mcp/Cargo.toml`
-- Create: `/Users/rjl/Code/github/things-mcp-server/crates/things-mcp/src/main.rs`
-- Create: `/Users/rjl/Code/github/things-mcp-server/crates/things-mcp/src/lib.rs`
+- Create: `/Users/rjl/Code/mcp-things/.gitignore`
+- Create: `/Users/rjl/Code/mcp-things/Cargo.toml`
+- Create: `/Users/rjl/Code/mcp-things/rust-toolchain.toml`
+- Create: `/Users/rjl/Code/mcp-things/crates/things-mcp/Cargo.toml`
+- Create: `/Users/rjl/Code/mcp-things/crates/things-mcp/src/main.rs`
+- Create: `/Users/rjl/Code/mcp-things/crates/things-mcp/src/lib.rs`
 
 - [ ] **Step 1: Initialise git in the project root**
 
 ```bash
-cd /Users/rjl/Code/github/things-mcp-server
+cd /Users/rjl/Code/mcp-things
 git init -b main
 ```
 
 - [ ] **Step 2: Write `.gitignore`**
 
-`/Users/rjl/Code/github/things-mcp-server/.gitignore`:
+`/Users/rjl/Code/mcp-things/.gitignore`:
 
 ```
 target/
@@ -64,7 +64,7 @@ components = ["rustfmt", "clippy"]
 
 - [ ] **Step 4: Write workspace `Cargo.toml`**
 
-`/Users/rjl/Code/github/things-mcp-server/Cargo.toml`:
+`/Users/rjl/Code/mcp-things/Cargo.toml`:
 
 ```toml
 [workspace]
@@ -100,7 +100,7 @@ HTTP-mode features (`transport-streamable-http-server`, `axum`, `tower-http`, `r
 
 - [ ] **Step 5: Write the crate `Cargo.toml`**
 
-`/Users/rjl/Code/github/things-mcp-server/crates/things-mcp/Cargo.toml`:
+`/Users/rjl/Code/mcp-things/crates/things-mcp/Cargo.toml`:
 
 ```toml
 [package]
@@ -140,7 +140,7 @@ tempfile.workspace = true
 
 - [ ] **Step 6: Write a minimal `main.rs`**
 
-`/Users/rjl/Code/github/things-mcp-server/crates/things-mcp/src/main.rs`:
+`/Users/rjl/Code/mcp-things/crates/things-mcp/src/main.rs`:
 
 ```rust
 fn main() {
@@ -150,7 +150,7 @@ fn main() {
 
 - [ ] **Step 7: Write a minimal `lib.rs`**
 
-`/Users/rjl/Code/github/things-mcp-server/crates/things-mcp/src/lib.rs`:
+`/Users/rjl/Code/mcp-things/crates/things-mcp/src/lib.rs`:
 
 ```rust
 //! `things-mcp` — local-first MCP bridge between Claude and Things 3.
@@ -2070,7 +2070,7 @@ Expected: clean. Binary at `target/release/things-mcp`.
 Wire `things-mcp` into Claude Code's `~/.claude/config.json` (or run via `claude mcp add`):
 
 ```bash
-claude mcp add things-mcp /Users/rjl/Code/github/things-mcp-server/target/release/things-mcp
+claude mcp add things-mcp /Users/rjl/Code/mcp-things/target/release/things-mcp
 ```
 
 Then in a Claude Code session, ask: *"Use the things_list_inbox tool to show my Things inbox."* Expected: a list of inbox items returned as JSON.
@@ -2100,7 +2100,7 @@ git commit -m "main: clap CLI + stdio bootstrap (AppState + ThingsServer)"
 
 - [ ] **Step 1: Write `README.md`**
 
-`/Users/rjl/Code/github/things-mcp-server/README.md`:
+`/Users/rjl/Code/mcp-things/README.md`:
 
 ```markdown
 # things-mcp-server
@@ -2134,7 +2134,7 @@ In a Claude Code session: *"List my Things inbox."*
 
 - [ ] **Step 2: Write `CLAUDE.md`**
 
-`/Users/rjl/Code/github/things-mcp-server/CLAUDE.md`:
+`/Users/rjl/Code/mcp-things/CLAUDE.md`:
 
 ```markdown
 # Working in this repo
@@ -2161,7 +2161,7 @@ In a Claude Code session: *"List my Things inbox."*
 
 ## Reference repo
 
-`zotero-connector` (`/Users/rjl/Code/github/zotero-connector`) implements the same dual-transport / OAuth / launchd / Tailscale-Funnel pattern this server will adopt in Plans 8 and 9. Mirror its conventions; do not deviate without writing it down first.
+`zotero-connector` (`/Users/rjl/Code/mcp-zotero`) implements the same dual-transport / OAuth / launchd / Tailscale-Funnel pattern this server will adopt in Plans 8 and 9. Mirror its conventions; do not deviate without writing it down first.
 ```
 
 - [ ] **Step 3: Commit**

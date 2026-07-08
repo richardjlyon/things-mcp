@@ -3181,7 +3181,7 @@ git commit -m "tests: end-to-end exercise of plan-2 read surface"
 
 - [ ] **Step 1: Mark Plan 2 status in the README**
 
-Open `/Users/rjl/Code/github/things-mcp-server/README.md` and replace the status line:
+Open `/Users/rjl/Code/mcp-things/README.md` and replace the status line:
 
 ```markdown
 **Status:** Plan 2 — full read surface (`inbox`/`today`/`upcoming`/`anytime`/`someday`/`logbook`/`trash`/`areas`/`projects`/`tags`/`get_todo`/`get_project`/`list_by_tag`) over stdio. See `docs/superpowers/plans/` for the active plan and follow-ons.

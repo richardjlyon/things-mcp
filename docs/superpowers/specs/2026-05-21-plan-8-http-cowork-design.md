@@ -3,7 +3,7 @@
 **Date:** 2026-05-21
 **Goal:** Enable Claude.ai's web Cowork sandbox to talk to `things-mcp` over HTTPS via Tailscale Funnel, with OAuth 2.1 + PKCE auth, bearer-middleware-gated `/mcp`, persistent token store, and `launchd` keepalive.
 
-**Authoritative reference:** `/Users/rjl/Code/github/zotero-connector/crates/zotero-mcp/src/`. This plan ports the same modules into `things-mcp` with the same shape. No architectural re-litigation.
+**Authoritative reference:** `/Users/rjl/Code/mcp-zotero/crates/zotero-mcp/src/`. This plan ports the same modules into `things-mcp` with the same shape. No architectural re-litigation.
 
 ## Why this is the right approach
 

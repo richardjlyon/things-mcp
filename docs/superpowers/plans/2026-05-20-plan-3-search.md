@@ -990,7 +990,7 @@ git commit -m "tests: end-to-end exercise of things_search"
 
 - [ ] **Step 1: Update README status**
 
-Open `/Users/rjl/Code/github/things-mcp-server/README.md` and replace the status line set by Plan 2 with:
+Open `/Users/rjl/Code/mcp-things/README.md` and replace the status line set by Plan 2 with:
 
 ```markdown
 **Status:** Plan 3 — read surface complete (`inbox`/`today`/`upcoming`/`anytime`/`someday`/`logbook`/`trash`/`areas`/`projects`/`tags`/`get_todo`/`get_project`/`list_by_tag`/`search`) over stdio. FTS5 capability is detected at startup; the search query currently uses `LIKE` against `title` and `notes` (FTS5 query path activates in a follow-on once verified against a live Things DB). See `docs/superpowers/plans/` for the active plan and follow-ons.

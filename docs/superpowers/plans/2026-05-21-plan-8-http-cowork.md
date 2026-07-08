@@ -4,7 +4,7 @@
 
 **Goal:** Land HTTPS-reachable, OAuth-protected, launchd-managed `things-mcp http-server` so Claude.ai Cowork can use the existing 29-tool surface.
 
-**Approach:** Direct port from `/Users/rjl/Code/github/zotero-connector/crates/zotero-mcp/src/`. Module shape, file boundaries, auth model, file layout, plist shape — all mirror the reference. Per-task changes are limited to things-mcp-specific identifiers (config dir, plist label, setup-step contents, env var names).
+**Approach:** Direct port from `/Users/rjl/Code/mcp-zotero/crates/zotero-mcp/src/`. Module shape, file boundaries, auth model, file layout, plist shape — all mirror the reference. Per-task changes are limited to things-mcp-specific identifiers (config dir, plist label, setup-step contents, env var names).
 
 **Spec:** `docs/superpowers/specs/2026-05-21-plan-8-http-cowork-design.md`
 
@@ -58,7 +58,7 @@ cargo: add HTTP/OAuth deps for plan 8 (axum, tower, sha2, url, …)
 
 **Steps:**
 
-- [ ] **Step 1.** Copy `/Users/rjl/Code/github/zotero-connector/crates/zotero-mcp/src/oauth/token_store.rs` → `crates/things-mcp/src/oauth/token_store.rs` verbatim.
+- [ ] **Step 1.** Copy `/Users/rjl/Code/mcp-zotero/crates/zotero-mcp/src/oauth/token_store.rs` → `crates/things-mcp/src/oauth/token_store.rs` verbatim.
 
 - [ ] **Step 2.** Scan the copied file for `zotero` / `Zotero` / `com.zotero-mcp` references. Replace with `things` / `Things` / `dev.things-mcp.things-mcp` as appropriate.
 
@@ -84,7 +84,7 @@ oauth/token_store: port from zotero-mcp (SHA-256 hashed at rest, 0600)
 
 **Steps:**
 
-- [ ] **Step 1.** Copy `/Users/rjl/Code/github/zotero-connector/crates/zotero-mcp/src/bearer.rs` → `crates/things-mcp/src/bearer.rs` verbatim.
+- [ ] **Step 1.** Copy `/Users/rjl/Code/mcp-zotero/crates/zotero-mcp/src/bearer.rs` → `crates/things-mcp/src/bearer.rs` verbatim.
 
 - [ ] **Step 2.** Adjust module-level docstring zotero references → things references.
 
@@ -137,7 +137,7 @@ oauth: PKCE flow + discovery + token endpoints (port from zotero-mcp)
 
 **Steps:**
 
-- [ ] **Step 1.** Copy `/Users/rjl/Code/github/zotero-connector/crates/zotero-mcp/src/http_transport.rs` verbatim.
+- [ ] **Step 1.** Copy `/Users/rjl/Code/mcp-zotero/crates/zotero-mcp/src/http_transport.rs` verbatim.
 
 - [ ] **Step 2.** Replace zotero-mcp identifiers in the module's docstring and any constants.
 
@@ -162,7 +162,7 @@ http_transport: rmcp StreamableHttpService wiring (port from zotero-mcp)
 
 **Steps:**
 
-- [ ] **Step 1.** Copy `/Users/rjl/Code/github/zotero-connector/crates/zotero-mcp/src/setup.rs`.
+- [ ] **Step 1.** Copy `/Users/rjl/Code/mcp-zotero/crates/zotero-mcp/src/setup.rs`.
 
 - [ ] **Step 2.** Replace the "detect Zotero" step with a "detect Things 3" step:
   - Probe for `/Applications/Things3.app` existence.
