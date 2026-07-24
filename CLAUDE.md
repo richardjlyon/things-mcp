@@ -25,3 +25,7 @@
 `zotero-connector` (`/Users/rjl/Code/mcp-zotero`) implements the same dual-transport / OAuth / launchd / Tailscale-Funnel pattern this server adopted in Plan 8. Mirror its conventions; do not deviate without writing it down first.
 
 **Mirror tax.** The Plan 8 modules (`bearer.rs`, `oauth.rs`, `oauth/token_store.rs`, `http_transport.rs`, `setup.rs`) are inline copies of zotero-mcp's, by deliberate choice — no shared library extraction (pinned principle). The cost: any fix to one of those modules MUST be cherry-picked to the sister repo in the same session, or the repos silently drift. We discovered this the hard way with the `/.well-known/openid-configuration` alias in v0.2.1.
+
+## Project knowledge
+
+Project knowledge (history, decisions, status) lives in the owner's private knowledge base — sessions with access should read the project note there before non-trivial changes. This file carries only how-to-work-here rules.
